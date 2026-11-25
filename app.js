@@ -1,13 +1,13 @@
 // CES 가이드 (웹앱). 화면: 오늘 · 지도 · 위시 · 기록, 어디서나 번역 버튼.
 export const VERSION = '0.1.1';
-import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, allNamed, tripById, koName, enName, newsUrl } from './data.js';
+import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, allNamed, tripById, koName, enName, newsUrl, DIR, loadDirectory } from './data.js';
 // 회사 이름: 한국어 먼저, 영어는 뒤에 작게
 const nm = b => `${esc(koName(b) || b?.no || '부스')}${enName(b) ? ` <span class="en">${esc(enName(b))}</span>` : ''}`;
 import { createMap, route, frontOf, walkMin, dist } from './map.js';
 import * as pos from './pos.js';
 import * as store from './store.js';
 import { esc, icon, $, $$, toast, sheet, closeSheet, laNow, toMin, dur, dayLabel } from './ui.js';
-import { openTalk, askKey } from './talk.js';
+import { openTalk, askKey, translate } from './talk.js';
 
 const S = { trip: null, interests: [], wish: new Set(), seen: new Set(), rate: {}, tab: 'today', hall: 'central', day: null, map: null, routeTo: null, notesF: { kind: '', q: '', hall: '', day: '' } };
 const view = () => $('#view');
@@ -16,6 +16,7 @@ const meXY = () => [pos.me.x, pos.me.y];
 
 // ---------- 시작 ----------
 async function boot() {
+  await loadDirectory(); // CES 공식 참가 기업 목록(없거나 못 받으면 예시 배치)
   const [trip, ints, wish, seen, rate, hall] = await Promise.all([store.get('trip', null), store.get('interests', null), store.get('wish', []), store.get('seen', []), store.get('rate', {}), store.get('viewHall', '')]);
   S.trip = trip ? tripById(trip) : null; S.interests = ints || []; S.wish = new Set(wish); S.seen = new Set(seen); S.rate = rate; if (hall && hallById(hall)) S.hall = hall; S.wishBy = (await store.get('wishBy', 'place')) === 'tag' ? 'tag' : 'place';
   await pos.load(); if (pos.me.hall) S.hall = pos.me.hall;
@@ -117,7 +118,7 @@ function renderMap() {
      <div class="mtools"><button id="m3d" class="seg"><span class="${'d3'}">3D</span><span>위에서</span></button></div>
      <div class="mtools r"><button class="rb" id="mMe" aria-label="내 위치">${icon('locate')}</button><button class="rb" id="mPocket" aria-label="주머니 모드">${icon('moon')}</button><button class="rb dark" id="mTalk" aria-label="번역">${icon('talk')}</button></div>
      <div class="routebar" id="routeBar" hidden></div>
-     ${SAMPLE ? '<p class="sample">예시 배치 · 꾹 누르면 "나 여기"</p>' : ''}
+     <p class="sample">${DIR.count ? `CES 공식 목록 ${esc(DIR.updated)} 기준 · 번호 순 배치` : '예시 배치'} · 꾹 누르면 "나 여기"</p>
    </div>
    <div class="quick">${['water', 'wc', 'food', 'bat', 'exit'].map(t => `<button data-a="${t}">${icon(t)}<b>${AMEN[t]}</b><small data-d="${t}">–</small></button>`).join('')}</div>`;
   $('.halls', view()).onclick = e => { const b = e.target.closest('[data-h]'); if (!b) return; S.hall = b.dataset.h; S.routeTo = null; renderMap(); };
@@ -160,9 +161,9 @@ async function openBooth(id) {
   const notes = (await store.notes()).filter(n => n.booth === id);
   const here = pos.me.hall === hall.id; const r = here ? route(hall, meXY(), frontOf(hall, b)) : null; const rate = S.rate[id] || 0;
   const sh = sheet(`<div class="bh"><div><p class="k">${esc(hall.short)} · ${esc(b.no)}${b.guess ? ' (예시 번호)' : ''}</p><h2>${b.name ? nm(b) : '이름 없는 부스'}</h2>
-      ${b.cat ? `<p class="cat">${esc(b.cat)}</p>` : ''}<div class="tags">${(b.tags || []).map(t => `<span>${esc(TAGS[t])}</span>`).join('')}</div></div>
+      ${b.cat ? `<p class="cat">${esc(b.cat)}</p>` : ''}${b.with?.length ? `<p class="cat">같은 부스 · ${esc(b.with.slice(0, 6).join(', '))}${b.with.length > 6 ? ` 외 ${b.with.length - 6}곳` : ''}</p>` : ''}<div class="tags">${(b.tags || []).map(t => `<span>${esc(TAGS[t])}</span>`).join('')}</div></div>
       <button class="heart ${S.wish.has(id) ? 'on' : ''}" id="bWish" aria-label="위시">${icon('heart')}</button></div>
-    ${b.pre ? `<button class="pv" id="bPv" aria-expanded="false"><span>${icon('star')}CES 미리 보기</span>${icon('down')}</button><div class="pvb" id="bPvb" hidden><p>${esc(b.pre)}</p><p class="mute small">지난 CES 전시를 바탕으로 한 예상이에요. CES 2027 공식 발표가 나오면 바뀌어요.</p><a class="link" href="${esc(newsUrl(b))}" target="_blank" rel="noopener noreferrer">최신 소식 찾아보기 ↗</a></div>` : ''}
+    ${b.pre || b.desc ? `<button class="pv" id="bPv" aria-expanded="false"><span>${icon('star')}CES 미리 보기</span>${icon('down')}</button><div class="pvb" id="bPvb" hidden>${b.pre ? `<p>${esc(b.pre)}</p><p class="mute small">지난 CES 전시를 바탕으로 한 예상이에요.</p>` : ''}${b.desc ? `<p class="en-desc" lang="en">${esc(b.desc)}${b.desc.length >= 80 ? '…' : ''}</p><p class="mute small">CES 2027 공식 참가 기업 목록의 회사 소개예요. <button class="link" id="bTr">한국어로 보기</button></p><p id="bTrOut" hidden></p>` : ''}<a class="link" href="${esc(newsUrl(b))}" target="_blank" rel="noopener noreferrer">최신 소식 찾아보기 ↗</a></div>` : ''}
     ${r ? `<div class="mt">${icon('walk')}<b>${r.m}m</b>${icon('clock')}<b>${walkMin(r.m)}분</b><button class="btn ghost sm" id="bGo">길 보기</button></div>` : `<div class="mt"><button class="btn ghost sm" id="bGo">지도에서 보기</button></div>`}
     <div class="rec3"><label class="btn rec">${icon('cam')}사진<input type="file" accept="image/*" capture="environment" id="bPhoto" hidden></label><button class="btn rec" id="bVoice">${icon('mic')}<span>누르고 말하기</span></button><button class="btn rec alt" id="bText">${icon('pen')}글</button></div>
     <div class="txt" id="bTxt" hidden><textarea id="bTa" rows="3" maxlength="2000" placeholder="본 것, 느낀 것, 물어볼 것"></textarea><button class="btn" id="bTaOk">저장</button></div>
@@ -171,6 +172,8 @@ async function openBooth(id) {
     <button class="btn wide alt" id="bTalk">${icon('talk')}번역 · 질문 추천</button>
     <div id="bNotes">${noteList(notes)}</div>`);
   sh.querySelector('#bPv')?.addEventListener('click', e => { const o = sh.querySelector('#bPvb'); o.hidden = !o.hidden; e.currentTarget.setAttribute('aria-expanded', String(!o.hidden)); e.currentTarget.classList.toggle('on', !o.hidden); });
+  sh.querySelector('#bTr')?.addEventListener('click', async e => { const o = sh.querySelector('#bTrOut'); o.hidden = false; o.innerHTML = '<span class="wait"><i></i><i></i><i></i></span>'; e.currentTarget.disabled = true;
+    try { o.textContent = await translate(b.desc, 'ko'); } catch (er) { o.textContent = er.fix ? '번역하려면 설정에서 AI 키를 넣어 주세요' : er.message === 'offline' ? '인터넷이 없어서 번역을 못 했어요' : '지금은 번역이 늦어요'; e.currentTarget.disabled = false; } });
   sh.querySelector('#bWish').onclick = async e => { const on = await store.toggleList('wish', id); on ? S.wish.add(id) : S.wish.delete(id); e.currentTarget.classList.toggle('on', on); e.currentTarget.classList.add('pop'); markMap(); };
   sh.querySelector('#bSeen').onclick = async e => { const on = await store.toggleList('seen', id); on ? S.seen.add(id) : S.seen.delete(id); e.currentTarget.classList.toggle('on', on); markMap(); };
   sh.querySelector('#bStars').onclick = async e => { const s = e.target.closest('[data-s]'); if (!s) return; S.rate[id] = +s.dataset.s; await store.set('rate', S.rate); $$('[data-s]', sh).forEach(x => x.classList.toggle('on', +x.dataset.s <= S.rate[id])); };
@@ -237,7 +240,7 @@ function bindNoteMedia(root) {
 // ---------- 위시 ----------
 function renderWish(q = '') {
   const qq = q.trim().toLowerCase();
-  const found = qq ? allNamed().filter(b => (b.name + ' ' + b.no + ' ' + (b.cat || '') + ' ' + b.tags.map(t => TAGS[t]).join(' ')).toLowerCase().includes(qq)).slice(0, 30) : [];
+  const found = qq ? allNamed().filter(b => (b.name + ' ' + b.no + ' ' + (b.cat || '') + ' ' + (b.with || []).join(' ') + ' ' + b.tags.map(t => TAGS[t]).join(' ')).toLowerCase().includes(qq)).slice(0, 30) : [];
   const by = S.wishBy || 'place';
   const wished = [...S.wish].map(boothById).filter(Boolean);
   // 위치별 = 홀 순서, 분야별 = 관심 분야 먼저(한 부스가 여러 분야면 각 분야에 다 보여요)
@@ -348,7 +351,7 @@ async function openSettings() {
    <button id="sExp">기록 전부 파일로 내보내기</button>
    <button id="sWipe" class="danger">이 폰의 기록 전부 지우기</button></div>
    <p class="mute small">위시·기록·사진·음성은 이 폰 브라우저 안에만 있어요${est ? ` (지금 ${(est.used / 1e6).toFixed(1)}MB)` : ''}. 번역할 때만 그 문장이 Google Gemini로 가요. 앱을 지우거나 사파리 기록을 지우면 같이 지워지니, 연수 끝나면 내보내기로 챙겨 두세요.</p>
-   <p class="mute small">${SAMPLE ? '지도 부스 배치는 예시예요. 부스 번호는 O.T 자료 기준이고, 12월 공식 도면으로 바꿀 예정이에요. ' : ''}버전 ${VERSION}</p>`, { tall: true });
+   <p class="mute small">${DIR.count ? `참가 기업 ${DIR.count.toLocaleString()}곳은 CES 공식 목록(${esc(DIR.updated)} 기준)이에요. 지도는 부스 번호 순서로 늘어놓은 것이라 실제 도면과 모양이 달라요. ` : '지도 부스 배치는 예시예요. '}버전 ${VERSION}</p>`, { tall: true });
   sh.querySelector('#sSetup').onclick = () => { closeSheet(); setTimeout(setup, 280); };
   sh.querySelector('#sSens').onclick = async () => { toast(await pos.startSensors() ? '켰어요' : '허용이 안 됐어요'); };
   sh.querySelector('#sCal').onclick = async () => toast(await pos.calibrate() ? '방향을 맞췄어요' : '먼저 걸음·방향을 켜 주세요');

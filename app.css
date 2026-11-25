@@ -129,3 +129,4 @@ body[data-tab=map] #fabTalk{display:none}
 .pv{width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--accS);color:var(--acc);border-radius:14px;padding:12px 14px;font-weight:700;margin:12px 0 4px}.pv span{display:flex;align-items:center;gap:6px}.pv .ic{width:18px;height:18px}.pv>.ic{transition:transform .35s var(--spring)}.pv.on>.ic{transform:rotate(180deg)}
 .pvb{background:var(--bg);border-radius:14px;padding:12px 14px;margin-bottom:8px;animation:up .35s var(--spring)}.pvb p{margin:0 0 6px;line-height:1.5}.pvb .link{font-weight:700;color:var(--acc)}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--card);border-radius:14px;padding:4px;margin:0 0 10px}.seg button{min-height:40px;border-radius:10px;font-weight:700;color:var(--sub);transition:background .25s,color .25s}.seg button.on{background:var(--ink);color:var(--bg)}
+.en-desc{color:var(--ink);opacity:.85;font-size:14px}

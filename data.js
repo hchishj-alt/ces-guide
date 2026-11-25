@@ -108,8 +108,75 @@ const SIZE = { xl: [40, 26], l: [26, 26], m: [14, 12], s: [9, 12] };
 const AISLE = 6, MARGIN = 10, CROSS = 64;
 
 // 예시 배치 만들기: 번호 순서대로 줄을 채우고, 사이사이 작은 부스(번호만)를 끼워요. 같은 입력이면 늘 같은 배치.
+// ---- CES 공식 참가 기업 목록(exhibitors.json) ----
+// 앱이 켜질 때 받아서 홀마다 붙여요. 목록이 바뀌면 exhibitors.json만 바꿔 올리면 다음에 켤 때 바로 반영돼요.
+export const DIR = { updated: '', count: 0, src: '' };
+const KW = [['ai', /\b(ai|artificial intelligence|machine learning|llm|agent|genai)\b/i], ['robot', /robot|humanoid|drone/i], ['mobility', /vehicle|automotive|mobility|\bev\b|car |scooter|e-bike|autonomous/i],
+  ['smarthome', /smart home|home appliance|appliance|vacuum|kitchen/i], ['iot', /\biot\b|sensor|connected device|matter\b/i], ['smartcity', /smart city|cities|infrastructure/i],
+  ['enterprise', /enterprise|b2b|saas|business solution/i], ['energy', /energy|battery|solar|power bank|charging/i], ['health', /health|medical|wellness|care\b|clinic|sleep/i],
+  ['wearable', /wearable|ring|watch|glasses/i], ['display', /display|oled|led|monitor|\btv\b|projector/i], ['xr', /\bxr\b|\bvr\b|\bar\b|virtual reality|augmented|metaverse/i],
+  ['food', /food|beverage|cook/i], ['audio', /audio|speaker|headphone|earbud|sound/i], ['fintech', /fintech|payment|finance|bank/i]];
+export const guessTags = t => KW.filter(([, r]) => r.test(t || '')).map(([k]) => k).slice(0, 3);
+export function applyDirectory(j) {
+  if (!j || !Array.isArray(j.list)) return false;
+  for (const h of HALLS) { h.dir = []; h._booths = null; }
+  for (const row of j.list) {
+    const [name, booth, desc] = row; const no = parseInt(String(booth).replace(/\D/g, ''), 10); if (!name || !no) continue;
+    const h = HALLS.find(x => no >= x.from && no <= x.to); if (!h) continue;
+    const nm = String(name).slice(0, 120); const same = h.dir.find(d => d.no === String(no));
+    if (same) { (same.with ||= []).push(nm); same.tags = [...new Set([...same.tags, ...guessTags(nm)])].slice(0, 3); continue; } // 같은 부스를 쓰는 공동관
+    h.dir.push({ no: String(no), name: nm, en: nm, desc: String(desc || '').slice(0, 300), tags: guessTags(nm + ' ' + (desc || '')), size: 's', dir: true });
+  }
+  for (const h of HALLS) for (const d of h.dir) if (d.with?.length > 2) d.size = d.with.length > 8 ? 'l' : 'm'; // 공동관은 크게
+  Object.assign(DIR, { updated: String(j.updated || ''), count: HALLS.reduce((a, h) => a + h.dir.length, 0), src: String(j.src || '') });
+  return true;
+}
+export async function loadDirectory() {
+  try { const r = await fetch('./exhibitors.json', { cache: 'no-cache' }); if (r.ok) return applyDirectory(await r.json()); } catch { }
+  return false;
+}
+
+// 공식 목록이 있을 때: 부스 번호 앞자리(통로)를 세로줄로, 뒤 두 자리를 위아래 순서로 놓아요.
+// 실제 도면 좌표가 아니라 "번호 순서대로 늘어놓은 지도"라서, 번호가 가까우면 실제로도 가까운 편이에요.
+function layoutDir(hall) {
+  const byNo = new Map();
+  for (const d of hall.dir) byNo.set(d.no, { ...d });
+  for (const n of hall.named) { const d = byNo.get(n.no); byNo.set(n.no, d ? { ...d, ...n, desc: d.desc, with: d.en && d.en !== n.en ? [d.en, ...(d.with || [])] : d.with, tags: n.tags?.length ? n.tags : d.tags, dir: true } : { ...n }); }
+  const items = [...byNo.values()].sort((a, b) => (parseInt(a.no) || 9e9) - (parseInt(b.no) || 9e9));
+  const aisles = [...new Set(items.map(b => Math.floor((parseInt(b.no) || hall.to) / 100)))];
+  const W = hall.w - MARGIN * 2, H = hall.h - MARGIN * 2 - 6;
+  const ncol = Math.max(1, Math.min(aisles.length, Math.floor(W / (12 + AISLE))));
+  const pitch = W / ncol, cw = pitch - AISLE;
+  const cols = Array.from({ length: ncol }, () => []);
+  items.forEach(b => { const a = aisles.indexOf(Math.floor((parseInt(b.no) || hall.to) / 100)); cols[Math.min(ncol - 1, Math.floor(a * ncol / aisles.length))].push(b); });
+  const BAND = 6, every = 46; const bands = []; for (let y = every; y < H - 10; y += every) bands.push(y); // 가로 통로
+  const usable = H - bands.length * BAND;
+  const WEIGHT = { xl: 4, l: 2.6, m: 1.4, s: 1 };
+  const out = [];
+  cols.forEach((col, ci) => {
+    if (!col.length) return;
+    const x0 = MARGIN + ci * pitch;
+    const sub = Math.max(1, Math.ceil(col.length * 5 / usable)); // 너무 많으면 두세 줄로
+    const per = Math.ceil(col.length / sub), sw = (cw - (sub - 1)) / sub;
+    for (let s = 0; s < sub; s++) {
+      const part = col.slice(s * per, (s + 1) * per); if (!part.length) continue;
+      const tw = part.reduce((a, b) => a + (WEIGHT[b.size] || 1), 0);
+      let yy = 0;
+      for (const b of part) {
+        const hh = Math.max(3, usable * (WEIGHT[b.size] || 1) / tw - 1);
+        const shift = bands.filter((bd, k) => yy + hh / 2 >= bd - BAND * k).length * BAND; // 가로 통로만큼 아래로
+        out.push({ ...b, x: x0 + s * (sw + 1), y: MARGIN + yy + shift, w: sw, h: hh });
+        yy += hh + 1;
+      }
+    }
+  });
+  out.forEach(b => { b.id = hall.id + ':' + b.no; b.hall = hall.id; });
+  hall._booths = out; return out;
+}
+
 export function layout(hall) {
   if (hall._booths) return hall._booths;
+  if (hall.dir?.length) return layoutDir(hall);
   const named = [...hall.named].sort((a, b) => (parseInt(a.no) || 9e9) - (parseInt(b.no) || 9e9));
   const out = []; const rowH = 26; let y = MARGIN, ni = 0, fillNo = 0;
   const rows = Math.floor((hall.h - MARGIN * 2 - 14) / (rowH + AISLE));
