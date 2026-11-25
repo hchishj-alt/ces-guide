@@ -1,0 +1,17 @@
+{
+  "name": "CES 가이드",
+  "short_name": "CES 가이드",
+  "description": "CES 처음 가는 연수생을 위한 전시장 길안내·위시·기록·번역",
+  "start_url": "./#today",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f6",
+  "theme_color": "#f2f4f6",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
