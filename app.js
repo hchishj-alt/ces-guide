@@ -1,6 +1,8 @@
 // CES 가이드 (웹앱). 화면: 오늘 · 지도 · 위시 · 기록, 어디서나 번역 버튼.
-export const VERSION = '0.1.0';
-import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, allNamed, tripById } from './data.js';
+export const VERSION = '0.1.1';
+import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, allNamed, tripById, koName, enName, newsUrl } from './data.js';
+// 회사 이름: 한국어 먼저, 영어는 뒤에 작게
+const nm = b => `${esc(koName(b) || b?.no || '부스')}${enName(b) ? ` <span class="en">${esc(enName(b))}</span>` : ''}`;
 import { createMap, route, frontOf, walkMin, dist } from './map.js';
 import * as pos from './pos.js';
 import * as store from './store.js';
@@ -15,7 +17,7 @@ const meXY = () => [pos.me.x, pos.me.y];
 // ---------- 시작 ----------
 async function boot() {
   const [trip, ints, wish, seen, rate, hall] = await Promise.all([store.get('trip', null), store.get('interests', null), store.get('wish', []), store.get('seen', []), store.get('rate', {}), store.get('viewHall', '')]);
-  S.trip = trip ? tripById(trip) : null; S.interests = ints || []; S.wish = new Set(wish); S.seen = new Set(seen); S.rate = rate; if (hall && hallById(hall)) S.hall = hall;
+  S.trip = trip ? tripById(trip) : null; S.interests = ints || []; S.wish = new Set(wish); S.seen = new Set(seen); S.rate = rate; if (hall && hallById(hall)) S.hall = hall; S.wishBy = (await store.get('wishBy', 'place')) === 'tag' ? 'tag' : 'place';
   await pos.load(); if (pos.me.hall) S.hall = pos.me.hall;
   if (await store.get('sensors', false)) pos.startSensors().catch(() => { });
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
@@ -102,7 +104,7 @@ function recommend(hallId) {
   const list = picks.slice(0, 3).map(p => ({ ...p, r: route(hall, from, frontOf(hall, p.b)) }));
   if (!list.length) return toast('이 홀은 다 봤어요. 다른 홀을 골라 보세요');
   const sh = sheet(`<h2 class="sh-t">${icon('spark')} 지금 근처에서 <small>${esc(hall.short)}${pos.me.hall === hallId ? '' : ' · 입구 기준'}</small></h2>
-    <div class="list">${list.map((p, i) => `<button class="li" data-i="${i}"><span class="why">${esc(p.why)}</span><b>${esc(p.b.name)}</b><small>${esc(p.b.no)} · ${esc(p.b.tags.map(t => TAGS[t]).join(', '))}</small><span class="mt">${p.r ? `${p.r.m}m · ${walkMin(p.r.m)}분` : ''}</span></button>`).join('')}</div>`);
+    <div class="list">${list.map((p, i) => `<button class="li" data-i="${i}"><span class="why">${esc(p.why)}</span><b>${nm(p.b)}</b><small>${esc(p.b.no)} · ${esc(p.b.tags.map(t => TAGS[t]).join(', '))}</small><span class="mt">${p.r ? `${p.r.m}m · ${walkMin(p.r.m)}분` : ''}</span></button>`).join('')}</div>`);
   $$('.li', sh).forEach(el => el.onclick = () => { const p = list[+el.dataset.i]; closeSheet(); S.hall = hallId; S.routeTo = { booth: p.b.id }; go('map'); });
 }
 
@@ -157,9 +159,10 @@ async function openBooth(id) {
   const b = boothById(id); if (!b) return; const hall = hallById(b.hall); S.lastBooth = b.id;
   const notes = (await store.notes()).filter(n => n.booth === id);
   const here = pos.me.hall === hall.id; const r = here ? route(hall, meXY(), frontOf(hall, b)) : null; const rate = S.rate[id] || 0;
-  const sh = sheet(`<div class="bh"><div><p class="k">${esc(hall.short)} · ${esc(b.no)}${b.guess ? ' (예시 번호)' : ''}</p><h2>${esc(b.name || '이름 없는 부스')}</h2>
-      <div class="tags">${(b.tags || []).map(t => `<span>${esc(TAGS[t])}</span>`).join('')}</div></div>
+  const sh = sheet(`<div class="bh"><div><p class="k">${esc(hall.short)} · ${esc(b.no)}${b.guess ? ' (예시 번호)' : ''}</p><h2>${b.name ? nm(b) : '이름 없는 부스'}</h2>
+      ${b.cat ? `<p class="cat">${esc(b.cat)}</p>` : ''}<div class="tags">${(b.tags || []).map(t => `<span>${esc(TAGS[t])}</span>`).join('')}</div></div>
       <button class="heart ${S.wish.has(id) ? 'on' : ''}" id="bWish" aria-label="위시">${icon('heart')}</button></div>
+    ${b.pre ? `<button class="pv" id="bPv" aria-expanded="false"><span>${icon('star')}CES 미리 보기</span>${icon('down')}</button><div class="pvb" id="bPvb" hidden><p>${esc(b.pre)}</p><p class="mute small">지난 CES 전시를 바탕으로 한 예상이에요. CES 2027 공식 발표가 나오면 바뀌어요.</p><a class="link" href="${esc(newsUrl(b))}" target="_blank" rel="noopener noreferrer">최신 소식 찾아보기 ↗</a></div>` : ''}
     ${r ? `<div class="mt">${icon('walk')}<b>${r.m}m</b>${icon('clock')}<b>${walkMin(r.m)}분</b><button class="btn ghost sm" id="bGo">길 보기</button></div>` : `<div class="mt"><button class="btn ghost sm" id="bGo">지도에서 보기</button></div>`}
     <div class="rec3"><label class="btn rec">${icon('cam')}사진<input type="file" accept="image/*" capture="environment" id="bPhoto" hidden></label><button class="btn rec" id="bVoice">${icon('mic')}<span>누르고 말하기</span></button><button class="btn rec alt" id="bText">${icon('pen')}글</button></div>
     <div class="txt" id="bTxt" hidden><textarea id="bTa" rows="3" maxlength="2000" placeholder="본 것, 느낀 것, 물어볼 것"></textarea><button class="btn" id="bTaOk">저장</button></div>
@@ -167,6 +170,7 @@ async function openBooth(id) {
       <button class="chipbtn ${S.seen.has(id) ? 'on' : ''}" id="bSeen">${icon('check')}봤어요</button></div>
     <button class="btn wide alt" id="bTalk">${icon('talk')}번역 · 질문 추천</button>
     <div id="bNotes">${noteList(notes)}</div>`);
+  sh.querySelector('#bPv')?.addEventListener('click', e => { const o = sh.querySelector('#bPvb'); o.hidden = !o.hidden; e.currentTarget.setAttribute('aria-expanded', String(!o.hidden)); e.currentTarget.classList.toggle('on', !o.hidden); });
   sh.querySelector('#bWish').onclick = async e => { const on = await store.toggleList('wish', id); on ? S.wish.add(id) : S.wish.delete(id); e.currentTarget.classList.toggle('on', on); e.currentTarget.classList.add('pop'); markMap(); };
   sh.querySelector('#bSeen').onclick = async e => { const on = await store.toggleList('seen', id); on ? S.seen.add(id) : S.seen.delete(id); e.currentTarget.classList.toggle('on', on); markMap(); };
   sh.querySelector('#bStars').onclick = async e => { const s = e.target.closest('[data-s]'); if (!s) return; S.rate[id] = +s.dataset.s; await store.set('rate', S.rate); $$('[data-s]', sh).forEach(x => x.classList.toggle('on', +x.dataset.s <= S.rate[id])); };
@@ -222,7 +226,7 @@ function noteList(ns) {
 function noteBody(n) {
   if (n.kind === 'photo') return `<img data-blob="${esc(n.blob)}" alt="부스 사진">`;
   if (n.kind === 'voice') return `${n.blob ? `<button class="play" data-audio="${esc(n.blob)}">${icon('play')}듣기</button>` : ''}<p>${esc(n.text || '(받아 적은 글 없음)')}</p>`;
-  if (n.kind === 'talk') return `<div class="convo">${n.convo.map(c => `<p class="${c.who}"><b>${esc(c.en)}</b><span>${esc(c.ko)}</span></p>`).join('')}</div>`;
+  if (n.kind === 'talk') return `<div class="convo">${n.convo.map(c => `<p class="c-${c.who === 'me' ? 'me' : 'them'}"><b>${esc(c.en || '')}</b><span>${esc(c.ko || '')}</span></p>`).join('')}</div>`;
   return `<p>${esc(n.text)}</p>`;
 }
 function bindNoteMedia(root) {
@@ -233,15 +237,22 @@ function bindNoteMedia(root) {
 // ---------- 위시 ----------
 function renderWish(q = '') {
   const qq = q.trim().toLowerCase();
-  const found = qq ? allNamed().filter(b => (b.name + ' ' + b.no + ' ' + b.tags.map(t => TAGS[t]).join(' ')).toLowerCase().includes(qq)).slice(0, 30) : [];
-  const groups = HALLS.map(h => ({ h, items: [...S.wish].filter(id => id.startsWith(h.id + ':')).map(boothById).filter(Boolean) })).filter(g => g.items.length);
-  const row = b => { const here = pos.me.hall === b.hall; const m = here ? Math.round(dist(meXY(), frontOf(hallById(b.hall), b)) * 1.25) : null; return `<div class="wrow ${S.seen.has(b.id) ? 'seen' : ''}"><button class="wmain" data-open="${esc(b.id)}"><b>${esc(b.name)}</b><small>${esc(b.no)} · ${esc(hallById(b.hall).short)}${m != null ? ` · ${m}m` : ''}${S.seen.has(b.id) ? ' · 봤어요' : ''}</small></button><button class="heart ${S.wish.has(b.id) ? 'on' : ''}" data-w="${esc(b.id)}" aria-label="위시">${icon('heart')}</button></div>`; };
+  const found = qq ? allNamed().filter(b => (b.name + ' ' + b.no + ' ' + (b.cat || '') + ' ' + b.tags.map(t => TAGS[t]).join(' ')).toLowerCase().includes(qq)).slice(0, 30) : [];
+  const by = S.wishBy || 'place';
+  const wished = [...S.wish].map(boothById).filter(Boolean);
+  // 위치별 = 홀 순서, 분야별 = 관심 분야 먼저(한 부스가 여러 분야면 각 분야에 다 보여요)
+  const groups = by === 'place'
+    ? HALLS.map(h => ({ title: h.name, items: wished.filter(b => b.hall === h.id) })).filter(g => g.items.length)
+    : Object.keys(TAGS).sort((a, c) => (S.interests.includes(c) ? 1 : 0) - (S.interests.includes(a) ? 1 : 0)).map(t => ({ title: TAGS[t], items: wished.filter(b => b.tags?.includes(t)).sort((a, c) => a.hall.localeCompare(c.hall)) })).filter(g => g.items.length);
+  const row = b => { const here = pos.me.hall === b.hall; const m = here ? Math.round(dist(meXY(), frontOf(hallById(b.hall), b)) * 1.25) : null; return `<div class="wrow ${S.seen.has(b.id) ? 'seen' : ''}"><button class="wmain" data-open="${esc(b.id)}"><b>${nm(b)}</b><small>${esc(b.no)} · ${esc(hallById(b.hall).short)}${m != null ? ` · ${m}m` : ''}${S.seen.has(b.id) ? ' · 봤어요' : ''}</small></button><button class="heart ${S.wish.has(b.id) ? 'on' : ''}" data-w="${esc(b.id)}" aria-label="위시">${icon('heart')}</button></div>`; };
   view().innerHTML = `<div class="search">${icon('search')}<input id="wq" placeholder="회사·부스 번호·분야 찾기" value="${esc(q)}" autocomplete="off"></div>
     ${qq ? `<section class="card"><h3 class="ch">찾은 부스 ${found.length}</h3>${found.map(row).join('') || '<p class="mute">없어요</p>'}</section>` : ''}
     <section class="card wsum"><div><b>${S.wish.size}</b><small>위시</small></div><div><b>${[...S.wish].filter(id => S.seen.has(id)).length}</b><small>봤어요</small></div><p class="mute">근처 60m에 오면 알려 드려요. 누르면 지도에서 3D로 미리 봐요.</p></section>
-    ${groups.map(g => `<section class="card"><h3 class="ch">${esc(g.h.name)} <small>${g.items.filter(b => !S.seen.has(b.id)).length}곳 남음</small></h3>${g.items.map(row).join('')}</section>`).join('') || '<p class="empty">하트를 눌러 가고 싶은 부스를 모아 보세요</p>'}`;
+    ${S.wish.size ? `<div class="seg" id="wBy"><button data-by="place" class="${by === 'place' ? 'on' : ''}">위치별</button><button data-by="tag" class="${by === 'tag' ? 'on' : ''}">분야별</button></div>` : ''}
+    ${groups.map(g => `<section class="card"><h3 class="ch">${esc(g.title)} <small>${g.items.filter(b => !S.seen.has(b.id)).length}곳 남음</small></h3>${g.items.map(row).join('')}</section>`).join('') || '<p class="empty">하트를 눌러 가고 싶은 부스를 모아 보세요</p>'}`;
   const inp = $('#wq'); inp.oninput = () => { const v = inp.value, p = inp.selectionStart; renderWish(v); const n = $('#wq'); n.focus(); n.setSelectionRange(p, p); };
   view().onclick = async e => {
+    const sb = e.target.closest('[data-by]'); if (sb) { S.wishBy = sb.dataset.by; store.set('wishBy', S.wishBy); renderWish($('#wq')?.value || ''); return; }
     const w = e.target.closest('[data-w]'); if (w) { const on = await store.toggleList('wish', w.dataset.w); on ? S.wish.add(w.dataset.w) : S.wish.delete(w.dataset.w); renderWish($('#wq')?.value || ''); return; }
     const o = e.target.closest('[data-open]'); if (o) { const b = boothById(o.dataset.open); S.hall = b.hall; S.focus = b.id; view().onclick = null; go('map'); setTimeout(() => openBooth(b.id), 700); }
   };
@@ -257,7 +268,7 @@ async function renderNotes() {
   view().innerHTML = `<div class="search">${icon('search')}<input id="nq" placeholder="메모·말한 내용·회사 찾기" value="${esc(f.q)}" autocomplete="off"></div>
    <div class="chips sc" id="nKind">${[['', '전체', all.length], ['photo', '사진', cnt('photo')], ['voice', '음성', cnt('voice')], ['text', '글', cnt('text')], ['talk', '대화', cnt('talk')]].map(([k, l, c]) => `<button data-k="${k}" class="${f.kind === k ? 'on' : ''}">${l} <small>${c}</small></button>`).join('')}</div>
    <div class="chips sc" id="nDay"><button data-d="" class="${!f.day ? 'on' : ''}">모든 날</button>${days.map(d => `<button data-d="${esc(d)}" class="${f.day === d ? 'on' : ''}">${esc(dayLabel(d))}</button>`).join('')}<select id="nHall"><option value="">모든 홀</option>${HALLS.map(h => `<option value="${h.id}" ${f.hall === h.id ? 'selected' : ''}>${esc(h.short)}</option>`).join('')}</select></div>
-   ${[...by].map(([id, ns]) => { const b = boothById(id); return `<section class="card nb"><button class="nbh" data-b="${esc(id)}"><b>${esc(b?.name || b?.no || '부스')}</b><small>${esc(hallById(b?.hall)?.short || '')} · ${esc(b?.no || '')}${S.rate[id] ? ' · ' + '★'.repeat(S.rate[id]) : ''}</small></button>${noteList(ns)}</section>`; }).join('') || `<p class="empty">${all.length ? '맞는 기록이 없어요' : '부스를 눌러 사진·음성·글을 남기면 여기 모여요'}</p>`}
+   ${[...by].map(([id, ns]) => { const b = boothById(id); return `<section class="card nb"><button class="nbh" data-b="${esc(id)}"><b>${nm(b)}</b><small>${esc(hallById(b?.hall)?.short || '')} · ${esc(b?.no || '')}${S.rate[id] ? ' · ' + '★'.repeat(S.rate[id]) : ''}</small></button>${noteList(ns)}</section>`; }).join('') || `<p class="empty">${all.length ? '맞는 기록이 없어요' : '부스를 눌러 사진·음성·글을 남기면 여기 모여요'}</p>`}
    ${all.length ? `<div class="row"><button class="btn ghost" id="nExp">${icon('share')}전부 파일로 내보내기</button></div>` : ''}`;
   bindNoteMedia(view());
   const inp = $('#nq'); inp.oninput = () => { f.q = inp.value; clearTimeout(S._nqT); S._nqT = setTimeout(async () => { const p = inp.selectionStart; await renderNotes(); const n = $('#nq'); n.focus(); n.setSelectionRange(p, p); }, 250); };
@@ -317,7 +328,12 @@ async function pocket() {
   const paint = () => { const hall = pos.me.hall && hallById(pos.me.hall); let near = ''; if (hall) { const w = [...S.wish].filter(id => id.startsWith(hall.id + ':') && !S.seen.has(id)).map(boothById).map(b => ({ b, m: dist(meXY(), frontOf(hall, b)) })).sort((a, c) => a.m - c.m)[0]; if (w) near = `${esc(w.b.name)} ${Math.round(w.m * 1.25)}m`; } ov.innerHTML = `<p>주머니 모드</p><b>${pos.me.steps.toLocaleString()}</b><small>걸음</small>${near ? `<p class="nw">가까운 위시 · ${near}</p>` : ''}<p class="out">두 번 톡 치면 나가요</p>`; };
   paint(); document.body.append(ov); const off = pos.onMove(paint);
   try { lock = await navigator.wakeLock?.request('screen'); } catch { }
-  ov.addEventListener('dblclick', async () => { off(); ov.remove(); try { await lock?.release(); } catch { } lock = null; });
+  // 폰은 dblclick이 잘 안 와서 직접 두 번 톡을 셈(0.5초 안, 너무 멀리 떨어진 톡은 무시)
+  let lastT = 0, lastX = 0, lastY = 0, gone = false;
+  const exit = async () => { if (gone) return; gone = true; off(); ov.remove(); document.removeEventListener('keydown', esc1); try { await lock?.release(); } catch { } lock = null; };
+  const esc1 = e => { if (e.key === 'Escape') exit(); }; document.addEventListener('keydown', esc1);
+  ov.addEventListener('pointerup', e => { const t = performance.now(); if (t - lastT < 500 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 80) { exit(); return; } lastT = t; lastX = e.clientX; lastY = e.clientY; ov.classList.remove('tap1'); void ov.offsetWidth; ov.classList.add('tap1'); });
+  ov.addEventListener('dblclick', exit);
 }
 
 // ---------- 설정 ----------

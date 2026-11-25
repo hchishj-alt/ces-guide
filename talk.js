@@ -46,50 +46,162 @@ export async function translate(text, to) {
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const canListen = !!SR;
+const NOSR = 'ces:nosr'; // 받아 적기가 막혔던 기기(아이폰 홈 화면 앱 등)는 기억해 두고 바로 녹음으로
+const srBlocked = () => { try { return +localStorage.getItem(NOSR) > Date.now(); } catch { return false; } };
+const blockSr = () => { try { localStorage.setItem(NOSR, String(Date.now() + 7 * 864e5)); } catch { } };
+
+// 결과 이어 붙이기. 안드로이드 크롬은 중간 결과가 앞 글자를 다시 담아 와서 그대로 붙이면 "이거 이거 한국" 처럼 겹침
+export function joinResults(list) {
+  const out = [];
+  for (const raw of list) {
+    const t = (raw || '').trim(); if (!t) continue;
+    const last = out[out.length - 1];
+    if (last != null && (t.startsWith(last) || last.startsWith(t))) out[out.length - 1] = t.length >= last.length ? t : last;
+    else out.push(t);
+  }
+  return out.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 // 받아 적기 한 번(말이 끝나면 끝남). onPart(중간 글자), 끝나면 최종 글자 돌려줌
 export function listen(lang, onPart) {
   return new Promise((res, rej) => {
     if (!SR) return rej(new Error('nosr'));
-    const r = new SR(); r.lang = lang; r.interimResults = true; r.continuous = false; let fin = '';
-    r.onresult = e => { let t = ''; for (const x of e.results) t += x[0].transcript; fin = t; onPart?.(t); };
-    r.onerror = e => rej(new Error(e.error || 'sr')); r.onend = () => res(fin.trim());
-    try { r.start(); } catch (e) { rej(e); }
+    const r = new SR(); r.lang = lang; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1; let fin = '', done = false, err = null;
+    r.onresult = e => { const t = joinResults(Array.from(e.results, x => x[0]?.transcript)); fin = t; onPart?.(t); };
+    r.onerror = e => { err = new Error(e.error || 'sr'); };
+    r.onend = () => { if (done) return; done = true; listen.stop = null; if (err && !fin) rej(err); else res(fin.trim()); };
+    try { r.start(); } catch (e) { done = true; return rej(e); }
     listen.stop = () => { try { r.stop(); } catch { } };
   });
 }
 
+// 녹음 → Gemini가 받아 적고 번역(받아 적기가 안 되는 폰용). 키가 있어야 함
+const recMime = () => ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/aac'].find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
+export const canRecord = () => !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+export function record(maxMs = 30000) {
+  let stopFn; const p = (async () => {
+    const st = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mime = recMime(); const mr = new MediaRecorder(st, mime ? { mimeType: mime } : undefined); const parts = [];
+    mr.ondataavailable = e => e.data.size && parts.push(e.data);
+    const end = new Promise(r => mr.onstop = r); mr.start();
+    const t = setTimeout(() => stopFn(), maxMs);
+    stopFn = () => { clearTimeout(t); if (mr.state !== 'inactive') mr.stop(); };
+    await end; st.getTracks().forEach(x => x.stop());
+    return new Blob(parts, { type: (mr.mimeType || mime || 'audio/webm').split(';')[0] });
+  })();
+  return { done: p, stop: () => stopFn?.() };
+}
+const b64 = blob => new Promise((r, j) => { const f = new FileReader(); f.onload = () => r(String(f.result).split(',')[1]); f.onerror = j; f.readAsDataURL(blob); });
+export async function hear(blob, from) {
+  const key = await store.get(KEY, ''); if (!key) throw Object.assign(new Error('nokey'), { fix: true });
+  if (!navigator.onLine) throw new Error('offline');
+  if (blob.size < 1500) throw new Error('empty');
+  if (blob.size > 15e6) throw new Error('big');
+  const ask = from === 'en' ? 'The audio is English spoken at a tech trade show booth. Write exactly what was said, then translate it into natural short Korean.' : 'The audio is Korean. Write exactly what was said, then translate it into simple, polite spoken English for talking to booth staff.';
+  const body = { contents: [{ parts: [{ text: ask + ' Reply as JSON {"src":"...","dst":"..."} only. If nothing was said, reply {"src":"","dst":""}.' }, { inline_data: { mime_type: blob.type || 'audio/webm', data: await b64(blob) } }] }], generationConfig: { temperature: .1, responseMimeType: 'application/json' } };
+  let last;
+  for (const m of MODELS) {
+    const c = new AbortController(); const t = setTimeout(() => c.abort(), 25000);
+    try {
+      const r = await fetch(GAPI + m + ':generateContent', { method: 'POST', signal: c.signal, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body) });
+      if (r.status === 401 || r.status === 403) throw Object.assign(new Error('badkey'), { fix: true });
+      if (!r.ok) { last = new Error('busy'); continue; }
+      const j = await r.json(); const txt = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+      const o = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+      return { src: String(o.src || '').trim().slice(0, 2000), dst: String(o.dst || '').trim().slice(0, 2000) };
+    } catch (e) { if (e.fix) throw e; last = e; } finally { clearTimeout(t); }
+  }
+  throw last || new Error('busy');
+}
+
+const HANGUL = /[가-힣]/;
 // 위젯: booth가 있으면 그 부스 분야에 맞는 질문 추천 + 대화를 그 부스 기록으로 저장
 export function openTalk({ booth = null, onSave } = {}) {
   const qs = questionsFor([...(booth?.tags || []), 'me']);
   const sh = sheet(`<h2 class="sh-t">${icon('talk')} 번역${booth ? ` <small>${esc(booth.name || booth.no)}</small>` : ''}</h2>
-    <div class="tk-log" id="tkLog"><p class="mute">아래 버튼을 누르고 말하면 받아 적고 번역해요.</p></div>
-    <div class="tk-btns"><button class="btn big" id="tkThem">${icon('mic')}상대 말 듣기<small>영어 → 한국어</small></button><button class="btn big alt" id="tkMe">${icon('mic')}내가 말하기<small>한국어 → 영어</small></button></div>
+    <div class="tk-log" id="tkLog"><p class="mute">버튼을 누르고 말하거나, 아래 칸에 글로 쳐도 번역돼요.</p></div>
+    <p class="tk-why" id="tkWhy" hidden></p>
+    <div class="tk-btns"><button class="btn big" id="tkThem">${icon('mic')}<span class="lb">상대 말 듣기</span><small>영어 → 한국어</small></button><button class="btn big alt" id="tkMe">${icon('mic')}<span class="lb">내가 말하기</span><small>한국어 → 영어</small></button></div>
+    <form class="tk-type" id="tkType" autocomplete="off"><input id="tkIn" maxlength="400" placeholder="글로 쳐서 번역 (한글↔영어 자동)" enterkeyhint="send"><button class="btn" id="tkGo" type="submit">번역</button></form>
     <h3 class="sh-h">질문 추천${booth?.tags?.length ? '' : ' · 기본'}</h3>
-    <div class="qq">${qs.map(([en, ko], i) => `<button data-q="${i}"><b>${esc(en)}</b><span>${esc(ko)}</span></button>`).join('')}</div>
-    <div class="big-en" id="bigEn" hidden></div>`, { tall: true, onClose: () => { listen.stop?.(); speechSynthesis?.cancel?.(); } });
-  const log = sh.querySelector('#tkLog'), big = sh.querySelector('#bigEn'); const convo = [];
-  const showBig = en => { big.hidden = false; big.innerHTML = `<p>${esc(en)}</p><small>화면을 상대에게 보여 주세요 · 누르면 다시 읽어요</small>`; big.onclick = () => speak(en); speak(en); };
+    <div class="qq">${qs.map(([en, ko], i) => `<button data-q="${i}"><b>${esc(en)}</b><span>${esc(ko)}</span></button>`).join('')}</div>`, { tall: true, onClose: () => { stopAll(); hideBig(); try { speechSynthesis.cancel(); } catch { } } });
+  const log = sh.querySelector('#tkLog'), why = sh.querySelector('#tkWhy'); const convo = [];
+  // 큰 영어 화면은 시트 밖(body)에 붙여야 스크롤·끌기에 안 밀리고 겹치지 않음
+  const big = document.createElement('div'); big.className = 'big-en'; big.hidden = true; document.body.append(big);
+  const hideBig = () => { big.hidden = true; big.remove(); };
+  const showBig = en => {
+    if (!big.isConnected) document.body.append(big);
+    big.hidden = false; big.innerHTML = `<button class="big-x" aria-label="닫기">${icon('x')}</button><p>${esc(en)}</p><div class="big-act"><button class="btn" data-a="say">${icon('play')} 다시 읽기</button><button class="btn ghost" data-a="x">닫기</button></div>`;
+    big.querySelector('.big-x').onclick = big.querySelector('[data-a=x]').onclick = () => { big.hidden = true; try { speechSynthesis.cancel(); } catch { } };
+    big.querySelector('[data-a=say]').onclick = () => speak(en); speak(en);
+  };
   sh.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const [en, ko] = qs[+b.dataset.q]; showBig(en); convo.push({ who: 'me', ko, en }); });
-  async function turn(who) {
-    if (!canListen) { toast('이 브라우저는 받아 적기를 못 해요. 사파리나 크롬에서 열어 주세요'); return; }
-    const row = document.createElement('div'); row.className = 'tk-row ' + who; row.innerHTML = '<p class="src">듣는 중…</p><p class="dst"></p>'; log.querySelector('.mute')?.remove(); log.append(row); row.scrollIntoView({ block: 'end', behavior: 'smooth' });
-    let text = '';
-    try { text = await listen(who === 'them' ? 'en-US' : 'ko-KR', t => row.firstChild.textContent = t); } catch (e) { row.firstChild.textContent = e.message === 'not-allowed' ? '마이크를 허용해 주세요' : '잘 못 들었어요. 다시 눌러 주세요'; return; }
-    if (!text) { row.remove(); return; }
-    row.firstChild.textContent = text; const dst = row.lastChild; dst.innerHTML = '<span class="wait"><i></i><i></i><i></i></span>';
+
+  let busy = null; // 지금 듣는 쪽('them'|'me')과 멈추는 함수
+  const btn = { them: sh.querySelector('#tkThem'), me: sh.querySelector('#tkMe') };
+  const setBtn = (who, txt) => { for (const k in btn) { btn[k].classList.toggle('on', k === who && !!txt); btn[k].querySelector('.lb').textContent = k === who && txt ? txt : (k === 'them' ? '상대 말 듣기' : '내가 말하기'); } };
+  function stopAll() { busy?.stop?.(); }
+  const say = (t, warn) => { why.hidden = !t; why.textContent = t || ''; why.classList.toggle('warn', !!warn); };
+  const newRow = who => { const row = document.createElement('div'); row.className = 'tk-row tk-' + who; row.innerHTML = '<p class="src"></p><p class="dst"></p>'; log.querySelector('.mute')?.remove(); log.append(row); log.scrollTop = log.scrollHeight; return { row, src: row.children[0], dst: row.children[1] }; };
+  const keyFix = dst => { dst.innerHTML = `번역하려면 AI 키가 필요해요. <button class="link">키 넣기</button>`; dst.querySelector('button').onclick = () => askKey(); };
+
+  async function translateInto(who, text, dst) {
+    dst.innerHTML = '<span class="wait"><i></i><i></i><i></i></span>';
     for (let tryN = 0; tryN < 3; tryN++) {
-      try { const out = await translate(text, who === 'them' ? 'ko' : 'en'); dst.textContent = out; convo.push(who === 'them' ? { who, en: text, ko: out } : { who, ko: text, en: out }); if (who === 'me') showBig(out); return; }
+      try { const out = await translate(text, who === 'them' ? 'ko' : 'en'); dst.textContent = out; convo.push(who === 'them' ? { who, en: text, ko: out } : { who, ko: text, en: out }); if (who === 'me') showBig(out); log.scrollTop = log.scrollHeight; return; }
       catch (e) {
-        if (e.fix) { dst.innerHTML = `번역하려면 AI 키가 필요해요. <button class="link" id="tkKey">키 넣기</button>`; dst.querySelector('#tkKey').onclick = () => askKey(); return; }
-        if (e.message === 'offline') { dst.textContent = '인터넷이 없어서 원문만 적어 뒀어요. 질문 카드는 그대로 쓸 수 있어요'; return; }
+        if (e.fix) return keyFix(dst);
+        if (e.message === 'offline') { dst.textContent = '인터넷이 없어서 원문만 적어 뒀어요. 질문 카드는 그대로 쓸 수 있어요'; convo.push({ who, [who === 'them' ? 'en' : 'ko']: text }); return; }
         await new Promise(r => setTimeout(r, 1200 * (tryN + 1)));
       }
     }
-    dst.textContent = '지금은 번역이 늦어요. 원문은 저장돼요';
+    dst.textContent = '지금은 번역이 늦어요. 원문은 저장돼요'; convo.push({ who, [who === 'them' ? 'en' : 'ko']: text });
   }
-  sh.querySelector('#tkThem').onclick = () => turn('them');
-  sh.querySelector('#tkMe').onclick = () => turn('me');
-  sh.addEventListener('click', e => { if (e.target.closest('.shbg')) return; });
+
+  // 받아 적기가 안 되는 폰: 녹음했다가 AI가 받아 적고 번역
+  async function byRecording(who) {
+    if (!canRecord()) { say('이 브라우저는 마이크를 못 써요. 아래 칸에 글로 쳐 주세요', true); sh.querySelector('#tkIn').focus(); return; }
+    if (!(await store.get(KEY, ''))) { say('이 폰은 바로 받아 적기가 안 돼서, 녹음해서 AI로 받아 적어야 해요. AI 키를 넣거나 아래 칸에 글로 쳐 주세요', true); askKey(); return; }
+    const { src, dst } = newRow(who); src.textContent = '녹음 중… 말 끝나면 버튼을 한 번 더 눌러요'; src.classList.add('live');
+    let rec; try { rec = record(30000); } catch { src.textContent = '마이크를 켜지 못했어요'; return; }
+    busy = { who, stop: () => rec.stop() }; setBtn(who, '끝났으면 누르기');
+    let blob; try { blob = await rec.done; } catch (e) { busy = null; setBtn(); src.classList.remove('live'); src.textContent = /NotAllowed|Permission/.test(e.name || e.message) ? '마이크를 허용해 주세요 (설정 › 사파리 › 마이크)' : '마이크를 켜지 못했어요'; return; }
+    busy = null; setBtn(); src.classList.remove('live'); src.textContent = '받아 적는 중…'; dst.innerHTML = '<span class="wait"><i></i><i></i><i></i></span>';
+    try {
+      const o = await hear(blob, who === 'them' ? 'en' : 'ko');
+      if (!o.src) { src.textContent = '말소리가 안 들렸어요. 다시 눌러 주세요'; dst.textContent = ''; return; }
+      src.textContent = o.src; dst.textContent = o.dst; convo.push(who === 'them' ? { who, en: o.src, ko: o.dst } : { who, ko: o.src, en: o.dst }); if (who === 'me' && o.dst) showBig(o.dst); log.scrollTop = log.scrollHeight;
+    } catch (e) {
+      if (e.fix) { src.textContent = '녹음은 됐는데 AI 키가 맞지 않아요'; return keyFix(dst); }
+      src.textContent = e.message === 'offline' ? '인터넷이 없어서 받아 적지 못했어요' : e.message === 'empty' ? '너무 짧았어요. 다시 눌러 주세요' : '받아 적기가 늦어요. 다시 누르거나 글로 쳐 주세요'; dst.textContent = '';
+    }
+  }
+
+  async function turn(who) {
+    if (busy) { const was = busy.who; stopAll(); if (was === who) return; await new Promise(r => setTimeout(r, 250)); }
+    say('');
+    if (!canListen || srBlocked()) return byRecording(who);
+    const { row, src, dst } = newRow(who); src.textContent = '듣는 중…'; src.classList.add('live');
+    busy = { who, stop: () => listen.stop?.() }; setBtn(who, '듣는 중 · 누르면 멈춤');
+    let text = '';
+    try { text = await listen(who === 'them' ? 'en-US' : 'ko-KR', t => { src.textContent = t || '듣는 중…'; }); }
+    catch (e) {
+      busy = null; setBtn(); const m = e.message;
+      if (m === 'service-not-allowed' || m === 'language-not-supported' || m === 'network' || m === 'nosr') { row.remove(); blockSr(); say('이 폰에선 바로 받아 적기가 막혀 있어서 녹음 방식으로 바꿀게요'); return byRecording(who); }
+      src.classList.remove('live');
+      src.textContent = m === 'not-allowed' ? '마이크를 허용해 주세요 (아이폰: 설정 › 사파리 › 마이크, 설정 › 개인정보 › 음성 인식)' : m === 'no-speech' ? '말소리가 안 들렸어요. 다시 눌러 주세요' : m === 'aborted' ? '멈췄어요' : '잘 못 들었어요. 다시 누르거나 글로 쳐 주세요';
+      return;
+    }
+    busy = null; setBtn(); src.classList.remove('live');
+    if (!text) { src.textContent = '말소리가 안 들렸어요. 다시 눌러 주세요'; return; }
+    src.textContent = text; await translateInto(who, text, dst);
+  }
+  btn.them.onclick = () => turn('them');
+  btn.me.onclick = () => turn('me');
+  sh.querySelector('#tkType').onsubmit = async e => {
+    e.preventDefault(); const inp = sh.querySelector('#tkIn'); const text = inp.value.trim().slice(0, 400); if (!text) return;
+    inp.value = ''; inp.blur(); const who = HANGUL.test(text) ? 'me' : 'them'; const { src, dst } = newRow(who); src.textContent = text; await translateInto(who, text, dst);
+  };
   const bg = sh.parentElement; const old = bg._close; bg._close = () => { old?.(); if (booth && convo.length && onSave) onSave(convo); };
 }
 

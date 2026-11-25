@@ -64,7 +64,7 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
     Object.assign(fl.style, { width: W + 'px', height: H + 'px', marginLeft: -W / 2 + 'px', marginTop: -H / 2 + 'px' });
     const bx = layout(h).map(b => {
       const z = b.filler ? 4 : HEIGHT[b.size] || 8, w = b.w * PXM, hh = b.h * PXM, big = !b.filler && b.w >= 14;
-      return `<div class="bx${b.filler ? ' fi' : ''}" data-id="${esc(b.id)}" style="left:${b.x * PXM}px;top:${b.y * PXM}px;width:${w}px;height:${hh}px"><i class="s" style="height:${z}px"></i><i class="e" style="width:${z}px"></i><i class="n" style="height:${z}px"></i><i class="w" style="width:${z}px"></i><i class="t" style="transform:translateZ(${z}px)"><b>${esc(b.no)}</b>${big ? `<span>${esc(b.name)}</span>` : ''}</i></div>`;
+      return `<div class="bx${b.filler ? ' fi' : ''}" data-id="${esc(b.id)}" style="left:${b.x * PXM}px;top:${b.y * PXM}px;width:${w}px;height:${hh}px"><i class="s" style="height:${z}px"></i><i class="e" style="width:${z}px"></i><i class="n" style="height:${z}px"></i><i class="w" style="width:${z}px"></i><i class="t" style="transform:translateZ(${z}px)"><b>${esc(b.no)}</b>${big ? `<span>${esc(b.ko || b.name)}</span>` : ''}</i></div>`;
     }).join('');
     const am = amenities(h).map(a => `<div class="pin p-${a.type}" style="left:${a.x * PXM}px;top:${a.y * PXM}px" title="${esc(a.name)}">${icon(a.type)}</div>`).join('');
     fl.innerHTML = `<svg class="rt" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"></svg>${bx}${am}<div class="me" hidden><div class="acc"></div><svg class="cone" viewBox="0 0 60 60"><path d="M30 30 L18 3 A30 30 0 0 1 42 3 Z"/></svg><div class="dot"></div></div>`;
