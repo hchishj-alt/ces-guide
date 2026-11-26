@@ -46,7 +46,7 @@ body[data-tab=map] #fabTalk{display:none}
 /* 지도 */
 .mapbox{position:relative;flex:1;min-height:300px;overflow:hidden}
 #map,.mp{position:absolute;inset:0}.mp{perspective:1100px;touch-action:none;overflow:hidden}
-.fl{position:absolute;left:50%;top:50%;background:var(--floor);border-radius:10px;will-change:transform}
+.fl{position:absolute;left:50%;top:50%;background:var(--floor);border-radius:10px}.fl.moving{will-change:transform}
 .bx{position:absolute;background:var(--bT);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.05;overflow:hidden;padding:1px;box-shadow:calc(var(--z) * .5) var(--z) 0 var(--bS)}
 .mp.d2 .bx{box-shadow:0 1px 0 var(--bS)}
 .bx b{font-size:10px;font-weight:700;color:var(--sub);white-space:nowrap;letter-spacing:-.02em}.bx span{font-size:9px;font-weight:600;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}

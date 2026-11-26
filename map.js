@@ -60,8 +60,15 @@ const fs = (w, h, no) => { const n = String(no).length, f = fit1(w, h, n), v = f
 export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}) {
   root.innerHTML = '<div class="mp d3"><div class="fl"></div></div>';
   const mp = root.firstChild, fl = mp.firstChild;
-  let hall = null, z = 1, pan = [0, 0], mode = 'd3', meEl = null, rtEl = null;
-  let raf = 0; const applyNow = (smooth) => { fl.style.transition = smooth ? 'transform .8s cubic-bezier(.34,1.25,.64,1)' : 'none'; fl.style.transform = `translate(${pan[0]}px,${pan[1]}px) scale(${z}) ` + (mode === 'd3' ? 'rotateX(52deg) rotateZ(-28deg)' : ''); };
+  const pts = new Map(); let hall = null, z = 1, pan = [0, 0], mode = 'd3', meEl = null, rtEl = null;
+  let raf = 0, sharpT = 0;
+  // 움직이는 동안만 지도를 한 장 그림으로 굳혀 부드럽게, 멈추면 굳힌 걸 풀어 지금 크기로 다시 선명하게 그려요
+  // 선명하게: 멈추면 CSS zoom으로 지도를 실제 크기로 다시 그리고(R배), transform 배율은 z/R만 남겨요.
+  // 확대(scale)만 쓰면 처음 그린 작은 그림을 늘려서 글씨가 깨져요.
+  let R = 1; const tf = () => `translate(${pan[0] / R}px,${pan[1] / R}px) scale(${z / R}) ` /* zoom 안의 px도 R배가 되어서 나눠요 */ + (mode === 'd3' ? 'rotateX(52deg) rotateZ(-28deg)' : '');
+  const sharpen = () => { const r = Math.max(1, Math.min(6, Math.round(z * 4) / 4)); fl.classList.remove('moving'); if (r === R) return; R = r; fl.style.transition = 'none'; fl.style.zoom = R; fl.style.transform = tf(); };
+  const moving = (ms = 180) => { fl.classList.add('moving'); clearTimeout(sharpT); sharpT = setTimeout(() => { if (pts.size) moving(ms); else sharpen(); }, ms); };
+  const applyNow = (smooth) => { moving(smooth ? 900 : 180); fl.style.transition = smooth ? 'transform .8s cubic-bezier(.34,1.25,.64,1)' : 'none'; fl.style.transform = tf(); };
   const apply = smooth => { if (smooth) { cancelAnimationFrame(raf); raf = 0; applyNow(true); return; } if (!raf) raf = requestAnimationFrame(() => { raf = 0; applyNow(false); }); };
   const fit = () => { if (!hall) return 1; const W = mp.clientWidth || 360, H = mp.clientHeight || 400; return Math.min(W / (hall.w * PXM), H / (hall.h * PXM)) * (mode === 'd3' ? 1.25 : .94); };
   function setHall(h) {
@@ -97,7 +104,7 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
   }
   function setMode(m) { mode = m; mp.className = 'mp ' + m; z = fit(); pan = [0, 0]; apply(true); }
   // 손가락: 끌기=이동, 두 손가락=확대, 꾹 누르기=나 여기, 톡=부스
-  const pts = new Map(); let start = null, moved = false, longT = 0, pinch0 = 0, z0 = 1;
+  let start = null, moved = false, longT = 0, pinch0 = 0, z0 = 1;
   const local = e => { const t = e.target.closest('.bx'); if (t && e.target === t) { const b = layout(hall).find(x => x.id === t.dataset.id); return [b.x + e.offsetX / PXM, b.y + e.offsetY / PXM]; } if (e.target === fl) return [e.offsetX / PXM, e.offsetY / PXM]; return null; };
   mp.addEventListener('pointerdown', e => {
     pts.set(e.pointerId, [e.clientX, e.clientY]); moved = false;
