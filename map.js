@@ -54,6 +54,11 @@ export const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 // ---------- 지도 그리기 ----------
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // 번호 글씨는 칸 너비에 맞춰 줄여요(다섯 자리가 잘리지 않게)
+// 입체 옆면: 화면에서 위로 솟은 만큼 바닥 평면에선 (-0.6, 1.12)×높이 쪽으로 밀려 보여요.
+// 그림자를 1px씩 겹쳐 쓸어 내리면 네모 두 개가 아니라 이어진 상자 옆면이 돼요(요소는 하나 그대로).
+const SIDE = {}; const sideFor = z => SIDE[z] ||= (() => { const n = Math.max(2, Math.ceil(z * 1.25)), out = [];
+  for (let i = 1; i <= n; i++) { const k = i / n; out.push(`${(-0.6 * z * k).toFixed(1)}px ${(1.12 * z * k).toFixed(1)}px 0 ${i > n - 1 ? 'var(--se)' : 'var(--sc)'}`); }
+  return out.join(','); })();
 const fit1 = (a, b, n) => Math.min(10, (a - 2) / (n * .6), b * .7);
 const fs = (w, h, no) => { const n = String(no).length, f = fit1(w, h, n), v = fit1(h, w, n); // 좁고 길면 세로로
   return v > f * 1.15 ? `font-size:${Math.max(3, v).toFixed(1)}px" class="v` : `font-size:${Math.max(3, f).toFixed(1)}px`; };
@@ -74,10 +79,12 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
   function setHall(h) {
     hall = h; const W = h.w * PXM, H = h.h * PXM;
     Object.assign(fl.style, { width: W + 'px', height: H + 'px', marginLeft: -W / 2 + 'px', marginTop: -H / 2 + 'px' });
-    const bx = layout(h).map(b => {
+    // 화면 앞쪽(아래) 부스가 나중에 그려져 뒤 부스 옆면을 가리게: 깊이 순으로 정렬
+    const depth = b => -0.47 * (b.x + b.w / 2) + 0.88 * (b.y + b.h / 2);
+    const bx = [...layout(h)].sort((a, c) => depth(a) - depth(c)).map(b => {
       const z = b.filler ? 4 : HEIGHT[b.size] || 8, w = b.w * PXM, hh = b.h * PXM, big = !b.filler && b.w >= 14;
       // 가볍게: 부스 하나 = 요소 하나(옆면은 그림자로). 예전엔 면 5개씩 3D로 그려서 수백 개면 버벅였어요.
-      return `<div class="bx${b.filler ? ' fi' : ''}" data-id="${esc(b.id)}" style="left:${b.x * PXM}px;top:${b.y * PXM}px;width:${w}px;height:${hh}px;--z:${z}px"><b style="${fs(w, hh, b.no)}">${esc(b.no)}</b>${big ? `<span>${esc(b.ko || b.name)}</span>` : ''}</div>`;
+      return `<div class="bx${b.filler ? ' fi' : ''}" data-id="${esc(b.id)}" style="left:${b.x * PXM}px;top:${b.y * PXM}px;width:${w}px;height:${hh}px;box-shadow:${sideFor(z)}"><b style="${fs(w, hh, b.no)}">${esc(b.no)}</b>${big ? `<span>${esc(b.ko || b.name)}</span>` : ''}</div>`;
     }).join('');
     const am = amenities(h).map(a => `<div class="pin p-${a.type}" style="left:${a.x * PXM}px;top:${a.y * PXM}px" title="${esc(a.name)}">${icon(a.type)}</div>`).join('');
     fl.innerHTML = `<svg class="rt" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"></svg>${bx}${am}<div class="me" hidden><div class="acc"></div><svg class="cone" viewBox="0 0 60 60"><path d="M30 30 L18 3 A30 30 0 0 1 42 3 Z"/></svg><div class="dot"></div></div>`;

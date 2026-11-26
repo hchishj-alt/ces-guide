@@ -47,13 +47,13 @@ body[data-tab=map] #fabTalk{display:none}
 .mapbox{position:relative;flex:1;min-height:300px;overflow:hidden}
 #map,.mp{position:absolute;inset:0}.mp{perspective:1100px;touch-action:none;overflow:hidden}
 .fl{position:absolute;left:50%;top:50%;background:var(--floor);border-radius:10px}.fl.moving{will-change:transform}
-.bx{position:absolute;background:var(--bT);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.05;overflow:hidden;padding:1px;box-shadow:calc(var(--z) * .5) var(--z) 0 var(--bS)}
-.mp.d2 .bx{box-shadow:0 1px 0 var(--bS)}
+.bx{position:absolute;background:var(--bT);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.05;overflow:hidden;padding:1px;--sc:var(--bS);--se:var(--bE)}
+.mp.d2 .bx{box-shadow:0 1px 0 var(--bS)!important}
 .bx b{font-size:10px;font-weight:700;color:var(--sub);white-space:nowrap;letter-spacing:-.02em}.bx span{font-size:9px;font-weight:600;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
 .bx.fi b{opacity:.55}.bx b.v{transform:rotate(-90deg)}
 .bx.rc b{color:var(--red)}
-.bx.wi{background:var(--wT);box-shadow:calc(var(--z) * .5) var(--z) 0 var(--wS)}.bx.wi b{color:var(--acc)}
-.bx.sn{background:var(--acc)}.bx.sn b,.bx.sn span{color:#fff}
+.bx.wi{background:var(--wT);--sc:var(--wS);--se:var(--wS)}.bx.wi b{color:var(--acc)}
+.bx.sn{background:var(--acc);--sc:color-mix(in srgb,var(--acc) 70%,#000);--se:color-mix(in srgb,var(--acc) 55%,#000)}.bx.sn b,.bx.sn span{color:#fff}
 .bx.fo{outline:3px solid var(--acc);outline-offset:1px;z-index:2;animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{outline-color:transparent}}
 .rt{position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:3;will-change:transform}.rt polyline{fill:none;stroke:var(--acc);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:9 7;animation:dash 1s linear infinite}
