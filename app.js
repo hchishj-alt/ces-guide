@@ -1,5 +1,5 @@
 // CES 가이드 (웹앱). 화면: 오늘 · 지도 · 위시 · 기록, 어디서나 번역 버튼.
-export const VERSION = '0.2.2';
+export const VERSION = '0.2.3';
 import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, boothByName, boothByInfo, infoByOld, allNamed, tripById, koName, enName, newsUrl, DIR, loadDirectory } from './data.js';
 // 회사 이름: 한국어 먼저, 영어는 뒤에 작게
 const nm = b => `${esc(koName(b) || b?.no || '부스')}${enName(b) ? ` <span class="en">${esc(enName(b))}</span>` : ''}`;

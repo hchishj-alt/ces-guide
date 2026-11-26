@@ -49,8 +49,8 @@ body[data-tab=map] #fabTalk{display:none}
 .fl{position:absolute;left:50%;top:50%;background:var(--floor);border-radius:10px;will-change:transform}
 .bx{position:absolute;background:var(--bT);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.05;overflow:hidden;padding:1px;box-shadow:calc(var(--z) * .5) var(--z) 0 var(--bS)}
 .mp.d2 .bx{box-shadow:0 1px 0 var(--bS)}
-.bx b{font-size:10px;font-weight:700;color:var(--sub)}.bx span{font-size:9px;font-weight:600;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
-.bx.fi b{font-size:6px;opacity:.55}
+.bx b{font-size:10px;font-weight:700;color:var(--sub);white-space:nowrap;letter-spacing:-.02em}.bx span{font-size:9px;font-weight:600;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
+.bx.fi b{opacity:.55}.bx b.v{transform:rotate(-90deg)}
 .bx.rc b{color:var(--red)}
 .bx.wi{background:var(--wT);box-shadow:calc(var(--z) * .5) var(--z) 0 var(--wS)}.bx.wi b{color:var(--acc)}
 .bx.sn{background:var(--acc)}.bx.sn b,.bx.sn span{color:#fff}
