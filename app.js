@@ -1,6 +1,6 @@
 // CES 가이드 (웹앱). 화면: 오늘 · 지도 · 위시 · 기록, 어디서나 번역 버튼.
-export const VERSION = '0.1.1';
-import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, allNamed, tripById, koName, enName, newsUrl, DIR, loadDirectory } from './data.js';
+export const VERSION = '0.2.0';
+import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, boothByName, boothByInfo, infoByOld, allNamed, tripById, koName, enName, newsUrl, DIR, loadDirectory } from './data.js';
 // 회사 이름: 한국어 먼저, 영어는 뒤에 작게
 const nm = b => `${esc(koName(b) || b?.no || '부스')}${enName(b) ? ` <span class="en">${esc(enName(b))}</span>` : ''}`;
 import { createMap, route, frontOf, walkMin, dist } from './map.js';
@@ -18,7 +18,8 @@ const meXY = () => [pos.me.x, pos.me.y];
 async function boot() {
   await loadDirectory(); // CES 공식 참가 기업 목록(없거나 못 받으면 예시 배치)
   const [trip, ints, wish, seen, rate, hall] = await Promise.all([store.get('trip', null), store.get('interests', null), store.get('wish', []), store.get('seen', []), store.get('rate', {}), store.get('viewHall', '')]);
-  S.trip = trip ? tripById(trip) : null; S.interests = ints || []; S.wish = new Set(wish); S.seen = new Set(seen); S.rate = rate; if (hall && hallById(hall)) S.hall = hall; S.wishBy = (await store.get('wishBy', 'place')) === 'tag' ? 'tag' : 'place';
+  S.trip = trip ? tripById(trip) : null; S.interests = ints || []; S.wish = new Set(wish); S.seen = new Set(seen); S.rate = rate;
+  await relink(); if (hall && hallById(hall)) S.hall = hall; S.wishBy = (await store.get('wishBy', 'place')) === 'tag' ? 'tag' : 'place';
   await pos.load(); if (pos.me.hall) S.hall = pos.me.hall;
   if (await store.get('sensors', false)) pos.startSensors().catch(() => { });
   $('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
@@ -31,6 +32,22 @@ async function boot() {
   if (ints == null) setup(); 
   go(location.hash.slice(1) || 'today', true);
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+}
+// 공식 목록이 바뀌어 부스 번호가 달라져도 위시·본 부스·별점이 따라가게: 이름을 같이 적어 두고, 못 찾으면 이름으로 다시 찾아요.
+async function relink() {
+  const names = await store.get('idNames', {}); let changed = false;
+  const fix = id => {
+    if (boothById(id)) return id;
+    const b = (names[id] && boothByName(names[id])) || boothByInfo(infoByOld(String(id).split(':')[1]));
+    if (b && b.id !== id) { changed = true; return b.id; }
+    return id; // 아직 목록에 없는 회사면 그대로 두었다가 나중에 다시 찾아요
+  };
+  const wish = [...S.wish].map(fix), seen = [...S.seen].map(fix), rate = {};
+  for (const [k, v] of Object.entries(S.rate)) rate[fix(k)] = v;
+  for (const id of [...wish, ...seen, ...Object.keys(rate)]) { const b = boothById(id); if (b?.en && names[id] !== b.en) { names[id] = b.en; changed = true; } }
+  if (!changed) return;
+  S.wish = new Set(wish); S.seen = new Set(seen); S.rate = rate;
+  await Promise.all([store.set('wish', wish), store.set('seen', seen), store.set('rate', rate), store.set('idNames', names)]);
 }
 function go(tab, fromHash) {
   if (!['today', 'map', 'wish', 'notes'].includes(tab)) tab = 'today';
@@ -56,7 +73,7 @@ function setup() {
   sh.querySelector('#suOk').onclick = async () => {
     S.interests = [...pick]; await store.set('interests', S.interests);
     S.trip = trip ? tripById(trip) : null; await store.set('trip', trip || null);
-    if (S.trip && sh.querySelector('#suWish').checked) { S.trip.wishes.forEach(no => { const b = boothByNo(no); if (b) S.wish.add(b.id); }); await store.set('wish', [...S.wish]); }
+    if (S.trip && sh.querySelector('#suWish').checked) { S.trip.wishes.forEach(no => { const b = boothByInfo(infoByOld(no)); if (b) S.wish.add(b.id); }); await store.set('wish', [...S.wish]); }
     closeSheet(); go(S.tab);
   };
 }
@@ -240,7 +257,7 @@ function bindNoteMedia(root) {
 // ---------- 위시 ----------
 function renderWish(q = '') {
   const qq = q.trim().toLowerCase();
-  const found = qq ? allNamed().filter(b => (b.name + ' ' + b.no + ' ' + (b.cat || '') + ' ' + (b.with || []).join(' ') + ' ' + b.tags.map(t => TAGS[t]).join(' ')).toLowerCase().includes(qq)).slice(0, 30) : [];
+  const found = qq ? allNamed().filter(b => (b.name + ' ' + b.no + ' ' + (b.also || []).join(' ') + ' ' + (b.cat || '') + ' ' + (b.with || []).join(' ') + ' ' + b.tags.map(t => TAGS[t]).join(' ')).toLowerCase().includes(qq)).slice(0, 30) : [];
   const by = S.wishBy || 'place';
   const wished = [...S.wish].map(boothById).filter(Boolean);
   // 위치별 = 홀 순서, 분야별 = 관심 분야 먼저(한 부스가 여러 분야면 각 분야에 다 보여요)
@@ -250,7 +267,7 @@ function renderWish(q = '') {
   const row = b => { const here = pos.me.hall === b.hall; const m = here ? Math.round(dist(meXY(), frontOf(hallById(b.hall), b)) * 1.25) : null; return `<div class="wrow ${S.seen.has(b.id) ? 'seen' : ''}"><button class="wmain" data-open="${esc(b.id)}"><b>${nm(b)}</b><small>${esc(b.no)} · ${esc(hallById(b.hall).short)}${m != null ? ` · ${m}m` : ''}${S.seen.has(b.id) ? ' · 봤어요' : ''}</small></button><button class="heart ${S.wish.has(b.id) ? 'on' : ''}" data-w="${esc(b.id)}" aria-label="위시">${icon('heart')}</button></div>`; };
   view().innerHTML = `<div class="search">${icon('search')}<input id="wq" placeholder="회사·부스 번호·분야 찾기" value="${esc(q)}" autocomplete="off"></div>
     ${qq ? `<section class="card"><h3 class="ch">찾은 부스 ${found.length}</h3>${found.map(row).join('') || '<p class="mute">없어요</p>'}</section>` : ''}
-    <section class="card wsum"><div><b>${S.wish.size}</b><small>위시</small></div><div><b>${[...S.wish].filter(id => S.seen.has(id)).length}</b><small>봤어요</small></div><p class="mute">근처 60m에 오면 알려 드려요. 누르면 지도에서 3D로 미리 봐요.</p></section>
+    <section class="card wsum"><div><b>${wished.length}</b><small>위시</small></div><div><b>${wished.filter(b => S.seen.has(b.id)).length}</b><small>봤어요</small></div><p class="mute">근처 60m에 오면 알려 드려요. 누르면 지도에서 3D로 미리 봐요.</p></section>
     ${S.wish.size ? `<div class="seg" id="wBy"><button data-by="place" class="${by === 'place' ? 'on' : ''}">위치별</button><button data-by="tag" class="${by === 'tag' ? 'on' : ''}">분야별</button></div>` : ''}
     ${groups.map(g => `<section class="card"><h3 class="ch">${esc(g.title)} <small>${g.items.filter(b => !S.seen.has(b.id)).length}곳 남음</small></h3>${g.items.map(row).join('')}</section>`).join('') || '<p class="empty">하트를 눌러 가고 싶은 부스를 모아 보세요</p>'}`;
   const inp = $('#wq'); inp.oninput = () => { const v = inp.value, p = inp.selectionStart; renderWish(v); const n = $('#wq'); n.focus(); n.setSelectionRange(p, p); };
