@@ -46,22 +46,20 @@ body[data-tab=map] #fabTalk{display:none}
 /* 지도 */
 .mapbox{position:relative;flex:1;min-height:300px;overflow:hidden}
 #map,.mp{position:absolute;inset:0}.mp{perspective:1100px;touch-action:none;overflow:hidden}
-.fl{position:absolute;left:50%;top:50%;background:var(--floor);border-radius:10px;transform-style:preserve-3d}
-.bx{position:absolute;transform-style:preserve-3d}.bx i{position:absolute;display:block}
-.bx .t{inset:0;background:var(--bT);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.05;overflow:hidden;padding:1px;transition:background .3s}
-.bx .t b{font-size:10px;font-weight:700;color:var(--sub)}.bx .t span{font-size:9px;font-weight:600;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
-.bx .s{left:0;right:0;bottom:0;background:var(--bS);transform-origin:bottom;transform:rotateX(-90deg)}.bx .n{left:0;right:0;top:0;background:var(--bS);transform-origin:top;transform:rotateX(90deg)}
-.bx .e{top:0;bottom:0;right:0;background:var(--bE);transform-origin:right;transform:rotateY(90deg)}.bx .w{top:0;bottom:0;left:0;background:var(--bE);transform-origin:left;transform:rotateY(-90deg)}
-.bx.fi .t b{font-size:6px;opacity:.55}
-.bx.rc .t b{color:var(--red)}
-.bx.wi .t{background:var(--wT)}.bx.wi .s,.bx.wi .n,.bx.wi .e,.bx.wi .w{background:var(--wS)}.bx.wi .t b{color:var(--acc)}
-.bx.sn .t{background:var(--acc)}.bx.sn .t b,.bx.sn .t span{color:#fff}
-.bx.fo .t{outline:3px solid var(--acc);outline-offset:1px;animation:pulse 1.2s ease-in-out infinite}
+.fl{position:absolute;left:50%;top:50%;background:var(--floor);border-radius:10px;will-change:transform}
+.bx{position:absolute;background:var(--bT);border-radius:2px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;line-height:1.05;overflow:hidden;padding:1px;box-shadow:calc(var(--z) * .5) var(--z) 0 var(--bS)}
+.mp.d2 .bx{box-shadow:0 1px 0 var(--bS)}
+.bx b{font-size:10px;font-weight:700;color:var(--sub)}.bx span{font-size:9px;font-weight:600;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
+.bx.fi b{font-size:6px;opacity:.55}
+.bx.rc b{color:var(--red)}
+.bx.wi{background:var(--wT);box-shadow:calc(var(--z) * .5) var(--z) 0 var(--wS)}.bx.wi b{color:var(--acc)}
+.bx.sn{background:var(--acc)}.bx.sn b,.bx.sn span{color:#fff}
+.bx.fo{outline:3px solid var(--acc);outline-offset:1px;z-index:2;animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{outline-color:transparent}}
-.rt{position:absolute;inset:0;transform:translateZ(1px);overflow:visible;pointer-events:none}.rt polyline{fill:none;stroke:var(--acc);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:9 7;animation:dash 1s linear infinite}
+.rt{position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:3;will-change:transform}.rt polyline{fill:none;stroke:var(--acc);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:9 7;animation:dash 1s linear infinite}
 @keyframes dash{to{stroke-dashoffset:-16}}
-.pin{position:absolute;width:22px;height:22px;margin:-11px;border-radius:50%;background:var(--card);color:var(--acc);display:grid;place-items:center;transform:translateZ(2px);pointer-events:none}.pin .ic{width:14px;height:14px}
-.me{position:absolute;transform-style:preserve-3d;transition:left .7s var(--spring),top .7s var(--spring);pointer-events:none}
+.pin{position:absolute;width:22px;height:22px;margin:-11px;border-radius:50%;background:var(--card);color:var(--acc);display:grid;place-items:center;pointer-events:none;z-index:3}.pin .ic{width:14px;height:14px}
+.me{position:absolute;z-index:4;transition:left .7s var(--spring),top .7s var(--spring);pointer-events:none}
 .me .acc{position:absolute;border-radius:50%;background:color-mix(in srgb,var(--acc) 15%,transparent);transform:translate(-50%,-50%) translateZ(2px);transition:width .6s var(--spring),height .6s var(--spring)}
 .me .cone{position:absolute;left:-30px;top:-30px;width:60px;height:60px;transition:transform .4s ease-out}.me .cone path{fill:var(--acc);opacity:.35}
 .me .dot{position:absolute;left:-8px;top:-8px;width:16px;height:16px;border-radius:50%;background:var(--acc);border:3px solid #fff;transform:translateZ(4px)}

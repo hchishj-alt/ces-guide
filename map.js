@@ -57,14 +57,16 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
   root.innerHTML = '<div class="mp d3"><div class="fl"></div></div>';
   const mp = root.firstChild, fl = mp.firstChild;
   let hall = null, z = 1, pan = [0, 0], mode = 'd3', meEl = null, rtEl = null;
-  const apply = (smooth) => { fl.style.transition = smooth ? 'transform .8s cubic-bezier(.34,1.25,.64,1)' : 'none'; fl.style.transform = `translate(${pan[0]}px,${pan[1]}px) scale(${z}) ` + (mode === 'd3' ? 'rotateX(52deg) rotateZ(-28deg)' : ''); };
+  let raf = 0; const applyNow = (smooth) => { fl.style.transition = smooth ? 'transform .8s cubic-bezier(.34,1.25,.64,1)' : 'none'; fl.style.transform = `translate(${pan[0]}px,${pan[1]}px) scale(${z}) ` + (mode === 'd3' ? 'rotateX(52deg) rotateZ(-28deg)' : ''); };
+  const apply = smooth => { if (smooth) { cancelAnimationFrame(raf); raf = 0; applyNow(true); return; } if (!raf) raf = requestAnimationFrame(() => { raf = 0; applyNow(false); }); };
   const fit = () => { if (!hall) return 1; const W = mp.clientWidth || 360, H = mp.clientHeight || 400; return Math.min(W / (hall.w * PXM), H / (hall.h * PXM)) * (mode === 'd3' ? 1.25 : .94); };
   function setHall(h) {
     hall = h; const W = h.w * PXM, H = h.h * PXM;
     Object.assign(fl.style, { width: W + 'px', height: H + 'px', marginLeft: -W / 2 + 'px', marginTop: -H / 2 + 'px' });
     const bx = layout(h).map(b => {
       const z = b.filler ? 4 : HEIGHT[b.size] || 8, w = b.w * PXM, hh = b.h * PXM, big = !b.filler && b.w >= 14;
-      return `<div class="bx${b.filler ? ' fi' : ''}" data-id="${esc(b.id)}" style="left:${b.x * PXM}px;top:${b.y * PXM}px;width:${w}px;height:${hh}px"><i class="s" style="height:${z}px"></i><i class="e" style="width:${z}px"></i><i class="n" style="height:${z}px"></i><i class="w" style="width:${z}px"></i><i class="t" style="transform:translateZ(${z}px)"><b>${esc(b.no)}</b>${big ? `<span>${esc(b.ko || b.name)}</span>` : ''}</i></div>`;
+      // 가볍게: 부스 하나 = 요소 하나(옆면은 그림자로). 예전엔 면 5개씩 3D로 그려서 수백 개면 버벅였어요.
+      return `<div class="bx${b.filler ? ' fi' : ''}" data-id="${esc(b.id)}" style="left:${b.x * PXM}px;top:${b.y * PXM}px;width:${w}px;height:${hh}px;--z:${z}px"><b>${esc(b.no)}</b>${big ? `<span>${esc(b.ko || b.name)}</span>` : ''}</div>`;
     }).join('');
     const am = amenities(h).map(a => `<div class="pin p-${a.type}" style="left:${a.x * PXM}px;top:${a.y * PXM}px" title="${esc(a.name)}">${icon(a.type)}</div>`).join('');
     fl.innerHTML = `<svg class="rt" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"></svg>${bx}${am}<div class="me" hidden><div class="acc"></div><svg class="cone" viewBox="0 0 60 60"><path d="M30 30 L18 3 A30 30 0 0 1 42 3 Z"/></svg><div class="dot"></div></div>`;
@@ -83,7 +85,7 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
   function showRoute(pts) { if (!rtEl) return; rtEl.innerHTML = pts ? `<polyline points="${pts.map(p => (p[0] * PXM).toFixed(1) + ',' + (p[1] * PXM).toFixed(1)).join(' ')}"/>` : ''; }
   // 화면 가운데로: 보이지 않는 점을 잠깐 놓고 실제 화면 위치를 재서 맞춤(원근 때문에 계산보다 정확)
   function center(x, y, zoom, cover = 0) { // cover: 아래를 가린 패널 높이(px) → 남은 칸 가운데로
-    if (!hall) return; const old = fl.style.transform; z = zoom || Math.max(z, fit() * 2.4); pan = [0, 0]; apply(false);
+    if (!hall) return; const old = fl.style.transform; z = zoom || Math.max(z, fit() * 2.4); pan = [0, 0]; cancelAnimationFrame(raf); raf = 0; applyNow(false);
     const pr = document.createElement('i'); pr.style.cssText = `position:absolute;left:${x * PXM}px;top:${y * PXM}px;width:1px;height:1px`; fl.append(pr);
     const a = pr.getBoundingClientRect(), m = mp.getBoundingClientRect(); pr.remove();
     pan = [m.x + m.width / 2 - a.x, m.y + Math.max(40, (m.height - cover) / 2) - a.y];
@@ -92,7 +94,7 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
   function setMode(m) { mode = m; mp.className = 'mp ' + m; z = fit(); pan = [0, 0]; apply(true); }
   // 손가락: 끌기=이동, 두 손가락=확대, 꾹 누르기=나 여기, 톡=부스
   const pts = new Map(); let start = null, moved = false, longT = 0, pinch0 = 0, z0 = 1;
-  const local = e => { const t = e.target.closest('.bx'); if (t && e.target.classList.contains('t')) { const b = layout(hall).find(x => x.id === t.dataset.id); return [b.x + e.offsetX / PXM, b.y + e.offsetY / PXM]; } if (e.target === fl) return [e.offsetX / PXM, e.offsetY / PXM]; return null; };
+  const local = e => { const t = e.target.closest('.bx'); if (t && e.target === t) { const b = layout(hall).find(x => x.id === t.dataset.id); return [b.x + e.offsetX / PXM, b.y + e.offsetY / PXM]; } if (e.target === fl) return [e.offsetX / PXM, e.offsetY / PXM]; return null; };
   mp.addEventListener('pointerdown', e => {
     pts.set(e.pointerId, [e.clientX, e.clientY]); moved = false;
     if (pts.size === 1) { start = { x: e.clientX, y: e.clientY, pan: [...pan] }; const p = local(e); clearTimeout(longT); if (p) longT = setTimeout(() => { if (!moved) { moved = true; onLong(p); } }, 600); }
