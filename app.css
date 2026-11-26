@@ -130,3 +130,21 @@ body[data-tab=map] #fabTalk{display:none}
 .pvb{background:var(--bg);border-radius:14px;padding:12px 14px;margin-bottom:8px;animation:up .35s var(--spring)}.pvb p{margin:0 0 6px;line-height:1.5}.pvb .link{font-weight:700;color:var(--acc)}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:var(--card);border-radius:14px;padding:4px;margin:0 0 10px}.seg button{min-height:40px;border-radius:10px;font-weight:700;color:var(--sub);transition:background .25s,color .25s}.seg button.on{background:var(--ink);color:var(--bg)}
 .en-desc{color:var(--ink);opacity:.85;font-size:14px}
+
+/* 지도 아래 통로 목록 */
+.secp{position:absolute;left:0;right:0;bottom:0;z-index:7;max-height:60%;display:flex;flex-direction:column;background:var(--card);border-radius:24px 24px 0 0;padding:0 12px 8px;box-shadow:0 -1px 0 var(--line);transition:transform .22s ease-in}
+.secp[hidden]{display:none}.secp.in{animation:secIn .45s var(--spring)}.secp.out{transform:translateY(100%)}@keyframes secIn{from{transform:translateY(100%)}}
+.secp .grab{margin:0 auto 4px;padding:10px 0 8px}
+.sec-h{display:flex;align-items:center;gap:6px;padding:0 0 8px}.sec-h>div{flex:1;display:flex;flex-direction:column;min-width:0}.sec-h b{font-size:16px}.sec-h small{color:var(--sub);font-size:12px}
+.sec-h .rb{width:36px;height:36px;border-radius:12px;background:var(--bg)}.sec-h .rb:disabled{opacity:.35}.sec-h [data-nav="-1"] .ic{transform:rotate(90deg)}.sec-h [data-nav="1"] .ic{transform:rotate(-90deg)}
+.sec-d{background:var(--accS);border-radius:16px;padding:10px 12px;margin:0 0 8px;animation:up .35s var(--spring)}
+.sd-top{display:flex;align-items:center;gap:8px}.sd-top div{flex:1;display:flex;flex-direction:column;min-width:0}.sd-top b{font-size:17px}.sd-top small{color:var(--sub);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.heart.sm{width:40px;height:40px;border-radius:12px;background:var(--card)}
+.sd-go{display:flex;align-items:center;gap:4px;margin-top:6px}.sd-go .ic{width:16px;height:16px;color:var(--acc)}.sd-go b{margin-right:6px;font-variant-numeric:tabular-nums}.sd-go small{color:var(--sub);font-size:12px;flex:1}.btn.sm{min-height:36px;padding:0 12px;font-size:14px;border-radius:12px}
+.sec-l{overflow:auto;overscroll-behavior:contain;margin:0 -4px;padding:0 4px;min-height:0}
+.srow{display:flex;align-items:center;border-radius:14px;transition:background .2s}.srow.on{background:var(--bg)}
+.sgo{flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:left;padding:9px 6px}
+.sno{flex:none;width:44px;font-size:12px;font-weight:700;color:var(--sub);font-variant-numeric:tabular-nums}
+.snm{flex:1;min-width:0;display:flex;flex-direction:column}.snm b,.snm small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.snm b{font-size:15px}.snm small{font-size:12px;color:var(--sub)}.srow.seen .snm b{color:var(--sub)}
+.stag{flex:none;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;background:var(--bg);color:var(--sub);border-radius:7px;padding:3px 7px}.srow.on .stag{background:var(--card)}
+.sht{flex:none;width:40px;height:40px;display:grid;place-items:center;color:var(--line)}.sht .ic{width:20px;height:20px}.sht.on{color:var(--red)}.sht.on .ic{fill:var(--red)}.sht.pop{animation:pop .4s var(--spring)}

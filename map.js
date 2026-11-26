@@ -82,11 +82,11 @@ export function createMap(root, { onBooth = () => { }, onLong = () => { } } = {}
   }
   function showRoute(pts) { if (!rtEl) return; rtEl.innerHTML = pts ? `<polyline points="${pts.map(p => (p[0] * PXM).toFixed(1) + ',' + (p[1] * PXM).toFixed(1)).join(' ')}"/>` : ''; }
   // 화면 가운데로: 보이지 않는 점을 잠깐 놓고 실제 화면 위치를 재서 맞춤(원근 때문에 계산보다 정확)
-  function center(x, y, zoom) {
+  function center(x, y, zoom, cover = 0) { // cover: 아래를 가린 패널 높이(px) → 남은 칸 가운데로
     if (!hall) return; const old = fl.style.transform; z = zoom || Math.max(z, fit() * 2.4); pan = [0, 0]; apply(false);
     const pr = document.createElement('i'); pr.style.cssText = `position:absolute;left:${x * PXM}px;top:${y * PXM}px;width:1px;height:1px`; fl.append(pr);
     const a = pr.getBoundingClientRect(), m = mp.getBoundingClientRect(); pr.remove();
-    pan = [m.x + m.width / 2 - a.x, m.y + m.height / 2 - a.y];
+    pan = [m.x + m.width / 2 - a.x, m.y + Math.max(40, (m.height - cover) / 2) - a.y];
     fl.style.transform = old; void fl.offsetWidth; apply(true);
   }
   function setMode(m) { mode = m; mp.className = 'mp ' + m; z = fit(); pan = [0, 0]; apply(true); }

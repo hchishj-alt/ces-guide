@@ -1,5 +1,5 @@
 // CES 가이드 (웹앱). 화면: 오늘 · 지도 · 위시 · 기록, 어디서나 번역 버튼.
-export const VERSION = '0.2.0';
+export const VERSION = '0.2.1';
 import { HALLS, TAGS, TRIPS, SAMPLE, layout, amenities, AMEN, hallById, boothById, boothByNo, boothByName, boothByInfo, infoByOld, allNamed, tripById, koName, enName, newsUrl, DIR, loadDirectory } from './data.js';
 // 회사 이름: 한국어 먼저, 영어는 뒤에 작게
 const nm = b => `${esc(koName(b) || b?.no || '부스')}${enName(b) ? ` <span class="en">${esc(enName(b))}</span>` : ''}`;
@@ -135,11 +135,12 @@ function renderMap() {
      <div class="mtools"><button id="m3d" class="seg"><span class="${'d3'}">3D</span><span>위에서</span></button></div>
      <div class="mtools r"><button class="rb" id="mMe" aria-label="내 위치">${icon('locate')}</button><button class="rb" id="mPocket" aria-label="주머니 모드">${icon('moon')}</button><button class="rb dark" id="mTalk" aria-label="번역">${icon('talk')}</button></div>
      <div class="routebar" id="routeBar" hidden></div>
+     <section class="secp" id="secp" hidden></section>
      <p class="sample">${DIR.count ? `CES 공식 목록 ${esc(DIR.updated)} 기준 · 번호 순 배치` : '예시 배치'} · 꾹 누르면 "나 여기"</p>
    </div>
    <div class="quick">${['water', 'wc', 'food', 'bat', 'exit'].map(t => `<button data-a="${t}">${icon(t)}<b>${AMEN[t]}</b><small data-d="${t}">–</small></button>`).join('')}</div>`;
   $('.halls', view()).onclick = e => { const b = e.target.closest('[data-h]'); if (!b) return; S.hall = b.dataset.h; S.routeTo = null; renderMap(); };
-  const m = S.map = createMap($('#map'), { onBooth: id => openBooth(id), onLong: p => { pos.anchor(hall.id, p[0], p[1], 6); toast('여기로 내 위치를 맞췄어요'); } });
+  const m = S.map = createMap($('#map'), { onBooth: id => openSection(id), onLong: p => { pos.anchor(hall.id, p[0], p[1], 6); toast('여기로 내 위치를 맞췄어요'); } });
   m.setHall(hall); markMap(); m.setMe(pos.me);
   $('#m3d').onclick = () => { m.setMode(m.mode === 'd3' ? 'd2' : 'd3'); $('#m3d').classList.toggle('flat', m.mode === 'd2'); };
   $('#mMe').onclick = () => { if (pos.me.hall === hall.id) m.center(pos.me.x, pos.me.y); else if (pos.me.hall) { S.hall = pos.me.hall; renderMap(); } else toast('부스를 눌러 기록하거나 지도를 꾹 누르면 내 위치가 잡혀요'); };
@@ -159,17 +160,66 @@ function navAmen(type) {
   if (!from) { toast('이 홀에서 내 위치를 먼저 잡아 주세요 (지도 꾹 누르기)'); return; }
   const a = nearestAmen(hall, type, from); if (!a) return; S.routeTo = { amen: a }; drawRoute();
 }
-function landmark(hall, pts) { const mid = pts[Math.floor(pts.length / 2)]; const b = layout(hall).filter(named).map(b => ({ b, m: dist(mid, [b.x + b.w / 2, b.y + b.h / 2]) })).sort((a, c) => a.m - c.m)[0]?.b; return b ? `${b.name} 쪽으로` : ''; }
+function landmark(hall, pts) { const mid = pts[Math.floor(pts.length / 2)]; const b = layout(hall).filter(named).map(b => ({ b, m: dist(mid, [b.x + b.w / 2, b.y + b.h / 2]) })).sort((a, c) => a.m - c.m)[0]?.b; if (!b) return ''; const n = koName(b); return `${n.length > 16 ? n.slice(0, 15) + '…' : n} 쪽으로`; }
 function drawRoute() {
   const hall = hallById(S.hall); const t = S.routeTo; const bar = $('#routeBar'); if (!t || !S.map) return;
+  const panel = $('#secp'); const quiet = panel && !panel.hidden; // 통로 목록이 열려 있으면 거리는 목록 안에서 보여 줘요
   const target = t.booth ? boothById(t.booth) : t.amen; if (!target) return;
   const to = t.booth ? frontOf(hall, target) : [target.x, target.y];
   const from = pos.me.hall === hall.id ? meXY() : [hall.w / 2, hall.h - 5];
   const r = route(hall, from, to); if (!r) { toast('길을 못 찾았어요'); return; }
   S.map.showRoute(r.pts); if (t.booth) markMap(target.id);
   const name = t.booth ? target.name || target.no : target.name; const near = r.m < 12;
+  if (quiet) { bar.hidden = true; return r; }
   bar.hidden = false; bar.innerHTML = `<div><b>${esc(name)}</b><small>${near ? '도착했어요' : `${esc(landmark(hall, r.pts))} · ${r.m}m · ${walkMin(r.m)}분`}${pos.me.hall === hall.id ? '' : ' · 입구 기준'}</small></div><button class="rb" aria-label="길안내 끄기">${icon('x')}</button>`;
   bar.querySelector('button').onclick = () => { S.routeTo = null; S.map.showRoute(null); bar.hidden = true; markMap(); };
+  return r;
+}
+
+// 지도에서 부스를 누르면: 그 통로(번호 백 단위)의 부스 목록이 아래에 떠요. 지도는 그대로 보이고 움직일 수 있어요.
+// 줄을 누르면 바로 길 안내 + 짧은 정보. X나 손잡이를 아래로 밀면 닫혀요. ‹ › 로 옆 통로.
+function openSection(id, pick = true) {
+  const b = boothById(id); if (!b) return; const hall = hallById(b.hall); const p = $('#secp'); if (!p) return openBooth(id);
+  const aisleOf = x => Math.floor(parseInt(x.no) / 100);
+  const all = layout(hall).filter(x => named(x) && !x.guess);
+  const aisles = [...new Set(all.map(aisleOf))].sort((a, c) => a - c);
+  const aisle = aisleOf(b), ai = aisles.indexOf(aisle);
+  const list = all.filter(x => aisleOf(x) === aisle).sort((a, c) => parseInt(a.no) - parseInt(c.no));
+  const tag = x => { const c = (x.cat || '').split('·')[0].trim() || TAGS[x.tags?.[0]] || ''; return c ? `<span class="stag">${esc(c)}</span>` : ''; };
+  const row = x => `<div class="srow ${S.seen.has(x.id) ? 'seen' : ''}" data-id="${esc(x.id)}"><button class="sgo" data-go="${esc(x.id)}"><span class="sno">${esc(x.no)}</span><span class="snm"><b>${esc(koName(x))}</b>${enName(x) ? `<small>${esc(enName(x))}</small>` : ''}</span>${tag(x)}</button><button class="sht ${S.wish.has(x.id) ? 'on' : ''}" data-w="${esc(x.id)}" aria-label="위시">${icon('heart')}</button></div>`;
+  p.innerHTML = `<div class="grab"></div><div class="sec-h"><button class="rb" data-nav="-1" ${ai <= 0 ? 'disabled' : ''} aria-label="앞 통로">${icon('down')}</button><div><b>${esc(hall.short)} · ${aisle}00번대 통로</b><small>${list.length}곳 · 누르면 바로 길 안내</small></div><button class="rb" data-nav="1" ${ai >= aisles.length - 1 ? 'disabled' : ''} aria-label="다음 통로">${icon('down')}</button><button class="rb" data-x aria-label="닫기">${icon('x')}</button></div>
+    <div class="sec-d" id="secD" hidden></div><div class="sec-l">${list.map(row).join('')}</div>`;
+  if (p.hidden) { p.hidden = false; p.classList.add('in'); setTimeout(() => p.classList.toggle('in', false), 500); }
+  $('#routeBar').hidden = true;
+  const syncHeart = (wid, on) => $$(`[data-w="${CSS.escape(wid)}"]`, p).forEach(h => h.classList.toggle('on', on));
+  p.onclick = async e => {
+    const w = e.target.closest('[data-w]');
+    if (w) { const on = await store.toggleList('wish', w.dataset.w); on ? S.wish.add(w.dataset.w) : S.wish.delete(w.dataset.w); syncHeart(w.dataset.w, on); w.classList.toggle('pop', false); void w.offsetWidth; w.classList.add('pop'); markMap(S.routeTo?.booth || ''); return; }
+    if (e.target.closest('[data-x]')) { closeSection(); return; }
+    const n = e.target.closest('[data-nav]');
+    if (n) { const f = all.find(x => aisleOf(x) === aisles[ai + +n.dataset.nav]); if (f) { openSection(f.id, false); S.map.center(f.x + f.w / 2, f.y + f.h / 2, 0, p.offsetHeight); markMap(f.id); } return; }
+    if (e.target.closest('[data-more]')) { openBooth(S.routeTo?.booth || id); return; }
+    const g = e.target.closest('[data-go]'); if (g) pickInSection(g.dataset.go);
+  };
+  let y0 = null; const grab = p.querySelector('.grab');
+  grab.onpointerdown = e => { y0 = e.clientY; grab.setPointerCapture(e.pointerId); };
+  grab.onpointermove = e => { if (y0 != null) p.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; };
+  grab.onpointerup = grab.onpointercancel = e => { if (y0 == null) return; const d = e.clientY - y0; y0 = null; p.style.transform = ''; if (d > 60) closeSection(); };
+  if (pick) pickInSection(id); else markMap(S.routeTo?.booth || '');
+}
+function pickInSection(id) {
+  const b = boothById(id); const p = $('#secp'); if (!b || !p) return; const hall = hallById(b.hall);
+  S.lastBooth = b.id; S.routeTo = { booth: id }; const r = drawRoute();
+  $$('.srow', p).forEach(x => x.classList.toggle('on', x.dataset.id === id));
+  p.querySelector(`.srow[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const here = pos.me.hall === hall.id; const d = $('#secD'); d.hidden = false;
+  d.innerHTML = `<div class="sd-top"><div><b>${nm(b)}</b><small>${esc(b.no)}${b.cat ? ' · ' + esc(b.cat) : ''}</small></div><button class="heart sm ${S.wish.has(id) ? 'on' : ''}" data-w="${esc(id)}" aria-label="위시">${icon('heart')}</button></div>
+    <div class="sd-go">${icon('walk')}<b>${r ? r.m + 'm' : '–'}</b>${icon('clock')}<b>${r ? walkMin(r.m) + '분' : '–'}</b><small>${here ? '' : '입구 기준'}</small><button class="btn sm" data-more>자세히 · 기록</button></div>`;
+  requestAnimationFrame(() => S.map.center(b.x + b.w / 2, b.y + b.h / 2, 0, p.offsetHeight));
+}
+function closeSection() {
+  const p = $('#secp'); if (!p || p.hidden) return; p.classList.add('out');
+  setTimeout(() => { p.hidden = true; p.classList.toggle('out', false); if (S.routeTo) drawRoute(); else markMap(); }, 220);
 }
 
 // 부스 카드: 위시, 본 곳, 별점, 기록(사진·말하기·글), 번역·질문
